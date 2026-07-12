@@ -1,0 +1,45 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/appInsightsSettings.xml
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+.DS_Store
+# Generated build and release artifacts
+**/build/
+/app/release/
+**/baselineProfiles/
+
+# Signing credentials
+*.jks
+*.keystore
+
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Build artifacts and local logs
+iosApp/build/
+*.log
+ios-boot.png
+ios-menu.png
+
+# Kotlin tooling session data
+.kotlin/
+
+# IDE-generated artifact configs
+/.idea/artifacts/
+
+# Xcode per-user state
+xcuserdata/
+**/*.xcuserstate
+
+# Markdown docs stay local
+*.md

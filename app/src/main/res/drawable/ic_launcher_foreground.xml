@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CANVAS CLASSICS launcher foreground: the retro handheld, scaled to sit
+     inside the 66dp adaptive-icon safe circle. Path coordinates are the
+     1024-space master's (art/canvas_classics_icon.svg); the group maps
+     them into the 108dp viewport. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:scaleX="0.082"
+        android:scaleY="0.082"
+        android:translateX="12.016"
+        android:translateY="12.672">
+
+        <!-- Body: darker under-plate peeking out the bottom, then the shell -->
+        <path
+            android:fillColor="#B4A98D"
+            android:pathData="M346,186 L678,186 A64,64 0 0 1 742,250 L742,770 A64,64 0 0 1 678,834 L346,834 A64,64 0 0 1 282,770 L282,250 A64,64 0 0 1 346,186 Z" />
+        <path android:pathData="M346,180 L678,180 A64,64 0 0 1 742,244 L742,764 A64,64 0 0 1 678,828 L346,828 A64,64 0 0 1 282,764 L282,244 A64,64 0 0 1 346,180 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="512"
+                    android:startY="180"
+                    android:endX="512"
+                    android:endY="828">
+                    <item android:offset="0" android:color="#FFFAF5EA" />
+                    <item android:offset="0.5" android:color="#FFF0E9D8" />
+                    <item android:offset="1" android:color="#FFDED4BD" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <!-- Top bevel highlight -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.55"
+            android:pathData="M319,196 L705,196 A13,13 0 0 1 718,209 A13,13 0 0 1 705,222 L319,222 A13,13 0 0 1 306,209 A13,13 0 0 1 319,196 Z" />
+
+        <!-- Screen bezel -->
+        <path
+            android:fillColor="#2C2633"
+            android:pathData="M360,240 L664,240 A30,30 0 0 1 694,270 L694,514 A30,30 0 0 1 664,544 L360,544 A30,30 0 0 1 330,514 L330,270 A30,30 0 0 1 360,240 Z" />
+        <path
+            android:fillColor="#1D1823"
+            android:pathData="M335,240 L689,240 A5,5 0 0 1 694,245 A5,5 0 0 1 689,250 L335,250 A5,5 0 0 1 330,245 A5,5 0 0 1 335,240 Z" />
+
+        <!-- Power LED in the bezel corner -->
+        <path
+            android:fillColor="#E5473E"
+            android:fillAlpha="0.25"
+            android:pathData="M329,531 A14,14 0 1 0 357,531 A14,14 0 1 0 329,531 Z" />
+        <path
+            android:fillColor="#E5473E"
+            android:pathData="M336,531 A7,7 0 1 0 350,531 A7,7 0 1 0 336,531 Z" />
+
+        <!-- Olive LCD -->
+        <path android:pathData="M370,266 L654,266 A14,14 0 0 1 668,280 L668,504 A14,14 0 0 1 654,518 L370,518 A14,14 0 0 1 356,504 L356,280 A14,14 0 0 1 370,266 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="512"
+                    android:startY="266"
+                    android:endX="512"
+                    android:endY="518">
+                    <item android:offset="0" android:color="#FFB0B878" />
+                    <item android:offset="1" android:color="#FF939C58" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- LCD glyphs: block, meteor, trail, ship, bricks/paddle/ball -->
+        <path
+            android:fillColor="#2F3A1C"
+            android:pathData="M392,296 h52 v52 h-52 z M586,300 h24 v24 h-24 z M610,312 h16 v16 h-16 z M388,404 h66 v22 h-66 z M432,382 h22 v22 h-22 z M596,388 h12 v12 h-12 z M584,400 h36 v14 h-36 z M392,466 h42 v18 h-42 z M440,466 h42 v18 h-42 z M488,466 h42 v18 h-42 z M586,452 h14 v14 h-14 z M560,486 h66 v12 h-66 z" />
+        <path
+            android:fillColor="#2F3A1C"
+            android:fillAlpha="0.62"
+            android:pathData="M444,270 h26 v26 h-26 z M598,284 h8 v10 h-8 z M620,292 h8 v10 h-8 z M454,382 h22 v22 h-22 z M600,368 h6 v12 h-6 z" />
+
+        <!-- D-pad -->
+        <path
+            android:fillColor="#2A2A31"
+            android:pathData="M374,644 L402,644 A12,12 0 0 1 414,656 L414,780 A12,12 0 0 1 402,792 L374,792 A12,12 0 0 1 362,780 L362,656 A12,12 0 0 1 374,644 Z M326,692 L450,692 A12,12 0 0 1 462,704 L462,732 A12,12 0 0 1 450,744 L326,744 A12,12 0 0 1 314,732 L314,704 A12,12 0 0 1 326,692 Z" />
+        <path
+            android:fillColor="#5A5A64"
+            android:fillAlpha="0.8"
+            android:pathData="M375,650 L401,650 A5,5 0 0 1 406,655 A5,5 0 0 1 401,660 L375,660 A5,5 0 0 1 370,655 A5,5 0 0 1 375,650 Z" />
+        <path
+            android:fillColor="#15151A"
+            android:fillAlpha="0.6"
+            android:pathData="M373,718 A15,15 0 1 0 403,718 A15,15 0 1 0 373,718 Z" />
+
+        <!-- Action buttons, diagonal pair -->
+        <path
+            android:fillColor="#6E2368"
+            android:fillAlpha="0.5"
+            android:pathData="M552,756 A38,38 0 1 0 628,756 A38,38 0 1 0 552,756 Z M630,700 A38,38 0 1 0 706,700 A38,38 0 1 0 630,700 Z" />
+        <path android:pathData="M552,752 A36,36 0 1 0 624,752 A36,36 0 1 0 552,752 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="588"
+                    android:startY="716"
+                    android:endX="588"
+                    android:endY="788">
+                    <item android:offset="0" android:color="#FFCC4E9B" />
+                    <item android:offset="1" android:color="#FF8E2F86" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M630,696 A36,36 0 1 0 702,696 A36,36 0 1 0 630,696 Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="666"
+                    android:startY="660"
+                    android:endX="666"
+                    android:endY="732">
+                    <item android:offset="0" android:color="#FFCC4E9B" />
+                    <item android:offset="1" android:color="#FF8E2F86" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillAlpha="0.45"
+            android:pathData="M574.5,734 L591.5,734 A4.5,4.5 0 0 1 596,738.5 A4.5,4.5 0 0 1 591.5,743 L574.5,743 A4.5,4.5 0 0 1 570,738.5 A4.5,4.5 0 0 1 574.5,734 Z M652.5,678 L669.5,678 A4.5,4.5 0 0 1 674,682.5 A4.5,4.5 0 0 1 669.5,687 L652.5,687 A4.5,4.5 0 0 1 648,682.5 A4.5,4.5 0 0 1 652.5,678 Z" />
+
+        <!-- Speaker grill -->
+        <group
+            android:rotation="28"
+            android:pivotX="669"
+            android:pivotY="792">
+            <path
+                android:fillColor="#B4A98D"
+                android:pathData="M645,776 A5,5 0 0 1 650,781 L650,815 A5,5 0 0 1 645,820 A5,5 0 0 1 640,815 L640,781 A5,5 0 0 1 645,776 Z M669,770 A5,5 0 0 1 674,775 L674,809 A5,5 0 0 1 669,814 A5,5 0 0 1 664,809 L664,775 A5,5 0 0 1 669,770 Z M693,764 A5,5 0 0 1 698,769 L698,803 A5,5 0 0 1 693,808 A5,5 0 0 1 688,803 L688,769 A5,5 0 0 1 693,764 Z" />
+        </group>
+    </group>
+</vector>

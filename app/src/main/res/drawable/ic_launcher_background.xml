@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CANVAS CLASSICS launcher background: midnight-violet field with a soft
+     halo (sits behind the console foreground) and sparse retro star dots.
+     Master art: art/canvas_classics_icon.svg -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0 h108 v108 h-108 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="43"
+                android:endY="108">
+                <item android:offset="0" android:color="#FF39245C" />
+                <item android:offset="0.55" android:color="#FF251440" />
+                <item android:offset="1" android:color="#FF150C26" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Halo behind the handheld -->
+    <path android:pathData="M10,50 A44,44 0 1 0 98,50 A44,44 0 1 0 10,50 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="50"
+                android:gradientRadius="44">
+                <item android:offset="0" android:color="#668B5CF6" />
+                <item android:offset="0.6" android:color="#298B5CF6" />
+                <item android:offset="1" android:color="#008B5CF6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Star dots -->
+    <path
+        android:fillColor="#C3AEE8"
+        android:fillAlpha="0.35"
+        android:pathData="M14.3,15.3 h1 v1 h-1 z M89.5,20.7 h0.8 v0.8 h-0.8 z M21.2,34.4 h0.7 v0.7 h-0.7 z M92.4,43.9 h1 v1 h-1 z M12.2,58.7 h0.8 v0.8 h-0.8 z M93.5,71.4 h0.7 v0.7 h-0.7 z M17.5,84 h1 v1 h-1 z M88.2,90.3 h0.8 v0.8 h-0.8 z M31.2,12.3 h0.7 v0.7 h-0.7 z M73.4,10.7 h0.9 v0.9 h-0.9 z" />
+</vector>

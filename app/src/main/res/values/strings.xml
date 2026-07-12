@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">PIXEL DROP</string>
+    <string name="update_available_title">Update available</string>
+    <string name="update_available_message">A new PixelDrop version is ready. Download it while you keep playing?</string>
+    <string name="update_action">Update</string>
+    <string name="update_later_action">Later</string>
+    <string name="update_ready_title">Update ready</string>
+    <string name="update_ready_message">The update has downloaded. Restart PixelDrop to finish installing it.</string>
+    <string name="update_restart_action">Restart</string>
+</resources>

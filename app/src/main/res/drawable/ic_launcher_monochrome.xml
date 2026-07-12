@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon silhouette: console shell with the screen, D-pad and
+     buttons punched out (evenOdd), so the launcher's tint reads the shape. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:scaleX="0.082"
+        android:scaleY="0.082"
+        android:translateX="12.016"
+        android:translateY="12.672">
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M346,180 L678,180 A64,64 0 0 1 742,244 L742,764 A64,64 0 0 1 678,828 L346,828 A64,64 0 0 1 282,764 L282,244 A64,64 0 0 1 346,180 Z M360,240 A30,30 0 0 0 330,270 L330,514 A30,30 0 0 0 360,544 L664,544 A30,30 0 0 0 694,514 L694,270 A30,30 0 0 0 664,240 Z M374,644 A12,12 0 0 0 362,656 L362,692 L326,692 A12,12 0 0 0 314,704 L314,732 A12,12 0 0 0 326,744 L362,744 L362,780 A12,12 0 0 0 374,792 L402,792 A12,12 0 0 0 414,780 L414,744 L450,744 A12,12 0 0 0 462,732 L462,704 A12,12 0 0 0 450,692 L414,692 L414,656 A12,12 0 0 0 402,644 Z M552,752 A36,36 0 1 0 624,752 A36,36 0 1 0 552,752 Z M630,696 A36,36 0 1 0 702,696 A36,36 0 1 0 630,696 Z" />
+    </group>
+</vector>
