@@ -43,8 +43,6 @@ import com.jasmeet.pixeldrop.game.GameId
 import com.jasmeet.pixeldrop.game.GamePhase
 import com.jasmeet.pixeldrop.game.next
 import com.jasmeet.pixeldrop.game.previous
-import com.jasmeet.pixeldrop.galaxyminer.GalaxyMinerEngine
-import com.jasmeet.pixeldrop.galaxyminer.GalaxyMinerPhase
 import com.jasmeet.pixeldrop.meteordodge.MeteorDodgeEngine
 import com.jasmeet.pixeldrop.meteordodge.MeteorDodgePhase
 import com.jasmeet.pixeldrop.motion.BootTimeline
@@ -70,8 +68,6 @@ import com.jasmeet.pixeldrop.ui.screens.ComingSoonScreen
 import com.jasmeet.pixeldrop.ui.screens.GameMenuScreen
 import com.jasmeet.pixeldrop.ui.screens.GameOverScreen
 import com.jasmeet.pixeldrop.ui.screens.GameplayScreen
-import com.jasmeet.pixeldrop.ui.screens.GalaxyMinerGameOverScreen
-import com.jasmeet.pixeldrop.ui.screens.GalaxyMinerScreen
 import com.jasmeet.pixeldrop.ui.screens.MeteorDodgeGameOverScreen
 import com.jasmeet.pixeldrop.ui.screens.MeteorDodgeScreen
 import com.jasmeet.pixeldrop.ui.screens.OrbitBlasterGameOverScreen
@@ -104,7 +100,6 @@ private fun isActiveGameRunning(
     orbitEngine: OrbitBlasterEngine,
     meteorEngine: MeteorDodgeEngine,
     racerEngine: PixelRacerEngine,
-    minerEngine: GalaxyMinerEngine,
 ): Boolean {
     if (screen != AppScreen.Game) return false
     return when (selectedGameId) {
@@ -114,7 +109,6 @@ private fun isActiveGameRunning(
         GameId.OrbitBlaster -> orbitEngine.state.phase == OrbitBlasterPhase.Running
         GameId.MeteorDodge -> meteorEngine.state.phase == MeteorDodgePhase.Running
         GameId.PixelRacer -> racerEngine.state.phase == PixelRacerPhase.Running
-        GameId.GalaxyMiner -> minerEngine.state.phase == GalaxyMinerPhase.Running
     }
 }
 
@@ -138,7 +132,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
     val orbitEngine = remember { OrbitBlasterEngine() }
     val meteorEngine = remember { MeteorDodgeEngine() }
     val racerEngine = remember { PixelRacerEngine() }
-    val minerEngine = remember { GalaxyMinerEngine() }
     var screen by remember { mutableStateOf(AppScreen.Boot) }
 
     // Cursor in the CANVAS CLASSICS menu; also which game ComingSoon names.
@@ -158,7 +151,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
     var frozenOrbitPhase by remember { mutableStateOf(OrbitBlasterPhase.Running) }
     var frozenMeteorPhase by remember { mutableStateOf(MeteorDodgePhase.Running) }
     var frozenRacerPhase by remember { mutableStateOf(PixelRacerPhase.Running) }
-    var frozenMinerPhase by remember { mutableStateOf(GalaxyMinerPhase.Running) }
 
     // Raw pressed state of the POWER pill, for the hold-to-power-off timer.
     var powerHeld by remember { mutableStateOf(false) }
@@ -172,7 +164,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     soundPlayer.resumeSfx()
-                    if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine, minerEngine)) {
+                    if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
                         soundPlayer.startGameplayMusic()
                     }
                 }
@@ -192,7 +184,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             soundPlayer.pauseSfx()
         } else {
             soundPlayer.resumeSfx()
-            if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine, minerEngine)) {
+            if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
                 soundPlayer.startGameplayMusic()
             }
         }
@@ -312,21 +304,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         }
     }
 
-    // GALAXY MINER's inertial field tick, shared by Android and iOS.
-    val minerPhase = minerEngine.state.phase
-    LaunchedEffect(screen, selectedGameId, minerPhase) {
-        if (screen == AppScreen.Game && selectedGameId == GameId.GalaxyMiner && minerPhase == GalaxyMinerPhase.Running) {
-            var lastFrame = withFrameMillis { it }
-            while (true) {
-                withFrameMillis { now ->
-                    val delta = now - lastFrame
-                    lastFrame = now
-                    minerEngine.tick(delta)
-                }
-            }
-        }
-    }
-
     // Line-clear chime: fires whenever the cleared-lines counter grows.
     val clearedLines = engine.state.lines
     var previousLines by remember { mutableIntStateOf(0) }
@@ -427,27 +404,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         previousRacerFuelWarnings = racerFuelWarnings
     }
 
-    val minerCollects = minerEngine.state.crystalsMined + minerEngine.state.powerUpsCollected
-    var previousMinerCollects by remember { mutableIntStateOf(0) }
-    LaunchedEffect(minerCollects) {
-        if (minerCollects > previousMinerCollects && screen == AppScreen.Game) soundPlayer.playLineClear()
-        previousMinerCollects = minerCollects
-    }
-
-    val minerDeposits = minerEngine.state.deposits
-    var previousMinerDeposits by remember { mutableIntStateOf(0) }
-    LaunchedEffect(minerDeposits) {
-        if (minerDeposits > previousMinerDeposits && screen == AppScreen.Game) soundPlayer.playMenuSelect()
-        previousMinerDeposits = minerDeposits
-    }
-
-    val minerHits = minerEngine.state.hits
-    var previousMinerHits by remember { mutableIntStateOf(0) }
-    LaunchedEffect(minerHits) {
-        if (minerHits > previousMinerHits && screen == AppScreen.Game && minerPhase == GalaxyMinerPhase.Running) soundPlayer.playRotate()
-        previousMinerHits = minerHits
-    }
-
     // Shared game-over chime: one shot on the transition into any game's
     // GameOver phase. Keyed on the boolean, so recompositions and sitting on
     // the game-over screen never replay it; retry flips it false and re-arms.
@@ -458,7 +414,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         GameId.OrbitBlaster -> orbitPhase == OrbitBlasterPhase.GameOver
         GameId.MeteorDodge -> meteorPhase == MeteorDodgePhase.GameOver
         GameId.PixelRacer -> racerPhase == PixelRacerPhase.GameOver
-        GameId.GalaxyMiner -> minerPhase == GalaxyMinerPhase.GameOver
     }
     LaunchedEffect(anyGameOver) {
         if (anyGameOver) soundPlayer.playGameOver()
@@ -466,7 +421,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
 
     // Gameplay music follows whichever game is active: playing while a round
     // runs, paused with the pause menu, stopped (and rewound) everywhere else.
-    LaunchedEffect(screen, selectedGameId, phase, trailPhase, brickPhase, orbitPhase, meteorPhase, racerPhase, minerPhase) {
+    LaunchedEffect(screen, selectedGameId, phase, trailPhase, brickPhase, orbitPhase, meteorPhase, racerPhase) {
         when {
             screen != AppScreen.Game -> soundPlayer.stopGameplayMusic()
             selectedGameId == GameId.PixelDrop && phase == GamePhase.Running ->
@@ -493,10 +448,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                 soundPlayer.startGameplayMusic()
             selectedGameId == GameId.PixelRacer && racerPhase == PixelRacerPhase.Paused ->
                 soundPlayer.pauseGameplayMusic()
-            selectedGameId == GameId.GalaxyMiner && minerPhase == GalaxyMinerPhase.Running ->
-                soundPlayer.startGameplayMusic()
-            selectedGameId == GameId.GalaxyMiner && minerPhase == GalaxyMinerPhase.Paused ->
-                soundPlayer.pauseGameplayMusic()
             else -> soundPlayer.stopGameplayMusic()
         }
     }
@@ -516,7 +467,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             frozenOrbitPhase = orbitEngine.state.phase
             frozenMeteorPhase = meteorEngine.state.phase
             frozenRacerPhase = racerEngine.state.phase
-            frozenMinerPhase = minerEngine.state.phase
             soundPlayer.playShutdown()
             screen = AppScreen.PoweringOff
         }
@@ -566,14 +516,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         screen = AppScreen.Game
     }
 
-    fun startGalaxyMiner() {
-        minerEngine.reset()
-        pauseIndex = 0
-        soundPlayer.stopGameplayMusic()
-        screen = AppScreen.Game
-    }
-
-    // Every CANVAS CLASSIC is implemented and launches directly.
+    // All six CANVAS CLASSICS are implemented and launch directly.
     fun launchSelected() {
         when (selectedGameId) {
             GameId.PixelDrop -> startGame()
@@ -582,7 +525,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             GameId.OrbitBlaster -> startOrbitBlaster()
             GameId.MeteorDodge -> startMeteorDodge()
             GameId.PixelRacer -> startPixelRacer()
-            GameId.GalaxyMiner -> startGalaxyMiner()
         }
     }
 
@@ -616,9 +558,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             racerEngine.moveLeft()
                             soundPlayer.playMove()
                         }
-                        GameId.GalaxyMiner -> if (minerEngine.state.phase == GalaxyMinerPhase.Running) {
-                            minerEngine.thrustLeft(); soundPlayer.playMove()
-                        }
                     }
                 }
             },
@@ -644,9 +583,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         GameId.PixelRacer -> if (racerEngine.state.phase == PixelRacerPhase.Running) {
                             racerEngine.moveRight()
                             soundPlayer.playMove()
-                        }
-                        GameId.GalaxyMiner -> if (minerEngine.state.phase == GalaxyMinerPhase.Running) {
-                            minerEngine.thrustRight(); soundPlayer.playMove()
                         }
                     }
                 }
@@ -681,11 +617,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                     screen == AppScreen.Game && selectedGameId == GameId.PixelRacer &&
                         racerEngine.state.phase == PixelRacerPhase.Paused ->
                         pauseIndex = (pauseIndex + 1) % PAUSE_MENU_ITEMS.size
-                    screen == AppScreen.Game && selectedGameId == GameId.GalaxyMiner -> when (minerEngine.state.phase) {
-                        GalaxyMinerPhase.Running -> { minerEngine.thrustDown(); soundPlayer.playMove() }
-                        GalaxyMinerPhase.Paused -> pauseIndex = (pauseIndex + 1) % PAUSE_MENU_ITEMS.size
-                        else -> Unit
-                    }
                 }
             },
             onUp = {
@@ -720,11 +651,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                     screen == AppScreen.Game && selectedGameId == GameId.PixelRacer &&
                         racerEngine.state.phase == PixelRacerPhase.Paused ->
                         pauseIndex = (pauseIndex + PAUSE_MENU_ITEMS.size - 1) % PAUSE_MENU_ITEMS.size
-                    screen == AppScreen.Game && selectedGameId == GameId.GalaxyMiner -> when (minerEngine.state.phase) {
-                        GalaxyMinerPhase.Running -> { minerEngine.thrustUp(); soundPlayer.playMove() }
-                        GalaxyMinerPhase.Paused -> pauseIndex = (pauseIndex + PAUSE_MENU_ITEMS.size - 1) % PAUSE_MENU_ITEMS.size
-                        else -> Unit
-                    }
                 }
             },
             onA = {
@@ -791,15 +717,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             }
                             PixelRacerPhase.GameOver -> startPixelRacer()
                         }
-                        GameId.GalaxyMiner -> when (minerEngine.state.phase) {
-                            GalaxyMinerPhase.Running -> minerEngine.mine()
-                            GalaxyMinerPhase.Paused -> when (pauseIndex) {
-                                0 -> minerEngine.resume()
-                                1 -> startGalaxyMiner()
-                                else -> screen = AppScreen.Menu
-                            }
-                            GalaxyMinerPhase.GameOver -> startGalaxyMiner()
-                        }
                     }
                 }
             },
@@ -834,11 +751,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         }
                         GameId.PixelRacer -> if (racerEngine.state.phase == PixelRacerPhase.GameOver) {
                             screen = AppScreen.Menu
-                        }
-                        GameId.GalaxyMiner -> when (minerEngine.state.phase) {
-                            GalaxyMinerPhase.Running -> minerEngine.brake()
-                            GalaxyMinerPhase.GameOver -> screen = AppScreen.Menu
-                            else -> Unit
                         }
                     }
                     else -> Unit
@@ -900,11 +812,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             }
                             PixelRacerPhase.Paused -> racerEngine.resume()
                             PixelRacerPhase.GameOver -> startPixelRacer()
-                        }
-                        GameId.GalaxyMiner -> when (minerEngine.state.phase) {
-                            GalaxyMinerPhase.Running -> { pauseIndex = 0; minerEngine.pause() }
-                            GalaxyMinerPhase.Paused -> minerEngine.resume()
-                            GalaxyMinerPhase.GameOver -> startGalaxyMiner()
                         }
                     }
                     AppScreen.PoweringOff, AppScreen.ComingSoon -> Unit
@@ -988,11 +895,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         PixelRacerPhase.Paused -> PauseScreen(pauseIndex)
                         PixelRacerPhase.GameOver -> PixelRacerGameOverScreen(racerEngine.state)
                     }
-                    GameId.GalaxyMiner -> when (minerEngine.state.phase) {
-                        GalaxyMinerPhase.Running -> GalaxyMinerScreen(minerEngine.state)
-                        GalaxyMinerPhase.Paused -> PauseScreen(pauseIndex)
-                        GalaxyMinerPhase.GameOver -> GalaxyMinerGameOverScreen(minerEngine.state)
-                    }
                 }
                 AppScreen.PoweringOff -> {
                     // Frozen content stays visible until the collapse curtain
@@ -1031,11 +933,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                                     PixelRacerPhase.Running -> PixelRacerScreen(racerEngine.state)
                                     PixelRacerPhase.Paused -> PauseScreen(pauseIndex)
                                     PixelRacerPhase.GameOver -> PixelRacerGameOverScreen(racerEngine.state)
-                                }
-                                GameId.GalaxyMiner -> when (frozenMinerPhase) {
-                                    GalaxyMinerPhase.Running -> GalaxyMinerScreen(minerEngine.state)
-                                    GalaxyMinerPhase.Paused -> PauseScreen(pauseIndex)
-                                    GalaxyMinerPhase.GameOver -> GalaxyMinerGameOverScreen(minerEngine.state)
                                 }
                             }
                             else -> Unit
@@ -1208,3 +1105,4 @@ private fun SynthwaveBackdrop() {
         )
     }
 }
+

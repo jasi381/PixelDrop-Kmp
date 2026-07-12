@@ -2,7 +2,7 @@ package com.jasmeet.pixeldrop.game
 
 /** Every playable slot in the CANVAS CLASSICS menu; all six launch a
  *  real game. */
-enum class GameId { PixelDrop, PixelTrail, BrickPulse, OrbitBlaster, MeteorDodge, PixelRacer, GalaxyMiner }
+enum class GameId { PixelDrop, PixelTrail, BrickPulse, OrbitBlaster, MeteorDodge, PixelRacer }
 
 data class GameInfo(val id: GameId, val title: String)
 
@@ -14,7 +14,6 @@ val GAMES: List<GameInfo> = listOf(
     GameInfo(GameId.OrbitBlaster, "ORBIT BLASTER"),
     GameInfo(GameId.MeteorDodge, "METEOR DODGE"),
     GameInfo(GameId.PixelRacer, "PIXEL RACER"),
-    GameInfo(GameId.GalaxyMiner, "GALAXY MINER"),
 )
 
 fun GameId.next(): GameId {

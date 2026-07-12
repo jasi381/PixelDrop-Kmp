@@ -159,20 +159,7 @@ private fun DrawScope.drawGamePreview(
         GameId.OrbitBlaster -> drawOrbitBlasterPreview(x0, y0, cell, ink)
         GameId.MeteorDodge -> drawMeteorDodgePreview(x0, y0, cell, ink)
         GameId.PixelRacer -> drawPixelRacerPreview(x0, y0, cell, ink, blinkPhase)
-        GameId.GalaxyMiner -> drawGalaxyMinerPreview(x0, y0, cell, ink, blinkPhase)
     }
-}
-
-private fun DrawScope.drawGalaxyMinerPreview(x0: Float, y0: Float, cell: Float, ink: Color, blink: Float) {
-    // Crystal belt, refinery ring and a small triangular mining craft.
-    listOf(3 to 2, 5 to 7, 8 to 3).forEach { (row, column) ->
-        fillPreviewCell(x0, y0, cell, row, column, ink, if (blink < 0.65f) 1f else 0.55f)
-    }
-    listOf(6 to 4, 6 to 5, 7 to 4, 7 to 5).forEach { (row, column) -> fillPreviewCell(x0, y0, cell, row, column, ink) }
-    for (column in 3..5) fillPreviewCell(x0, y0, cell, 14, column, ink, 0.55f)
-    fillPreviewCell(x0, y0, cell, 12, 4, ink)
-    fillPreviewCell(x0, y0, cell, 13, 3, ink)
-    fillPreviewCell(x0, y0, cell, 13, 5, ink)
 }
 
 private fun DrawScope.fillPreviewCell(x0: Float, y0: Float, cell: Float, r: Int, c: Int, ink: Color, alpha: Float = 1f) {
