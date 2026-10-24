@@ -59,7 +59,7 @@ class ConsoleInput(
 )
 
 private const val CONSOLE_ASPECT = 0.545f
-private const val THEME_FADE_MS = 450
+const val THEME_FADE_MS = 450
 
 /**
  * The one physical console used by every screen. Ivory body, top branding,
@@ -72,17 +72,25 @@ fun RetroConsoleShell(
     lcdBrightness: Float = 1f,
     ledBrightness: Float = 1f,
     theme: ConsoleTheme = CONSOLE_THEMES.first(),
+    /** Cross-fade length for paint changes; the host shortens it for the per-game morph. */
+    themeFadeMs: Int = THEME_FADE_MS,
     lcdContent: @Composable BoxScope.() -> Unit,
 ) {
     // The paint job cross-fades rather than snapping, so picking a theme in
     // the paint shop reads like the shell being resprayed.
-    val bodyLight by animateColorAsState(theme.bodyLight, tween(THEME_FADE_MS), label = "bodyLight")
-    val body by animateColorAsState(theme.body, tween(THEME_FADE_MS), label = "body")
-    val bodyDark by animateColorAsState(theme.bodyDark, tween(THEME_FADE_MS), label = "bodyDark")
-    val edge by animateColorAsState(theme.edge, tween(THEME_FADE_MS), label = "edge")
-    val buttonLight by animateColorAsState(theme.buttonLight, tween(THEME_FADE_MS), label = "buttonLight")
-    val button by animateColorAsState(theme.button, tween(THEME_FADE_MS), label = "button")
-    val buttonDark by animateColorAsState(theme.buttonDark, tween(THEME_FADE_MS), label = "buttonDark")
+    val bodyLight by animateColorAsState(theme.bodyLight, tween(themeFadeMs), label = "bodyLight")
+    val body by animateColorAsState(theme.body, tween(themeFadeMs), label = "body")
+    val bodyDark by animateColorAsState(theme.bodyDark, tween(themeFadeMs), label = "bodyDark")
+    val edge by animateColorAsState(theme.edge, tween(themeFadeMs), label = "edge")
+    val buttonLight by animateColorAsState(theme.buttonLight, tween(themeFadeMs), label = "buttonLight")
+    val button by animateColorAsState(theme.button, tween(themeFadeMs), label = "button")
+    val buttonDark by animateColorAsState(theme.buttonDark, tween(themeFadeMs), label = "buttonDark")
+    val dpadLight by animateColorAsState(theme.dpadLight, tween(themeFadeMs), label = "dpadLight")
+    val dpadFace by animateColorAsState(theme.dpadFace, tween(themeFadeMs), label = "dpadFace")
+    val dpadDark by animateColorAsState(theme.dpadDark, tween(themeFadeMs), label = "dpadDark")
+    val dpadArrow by animateColorAsState(theme.onDpad, tween(themeFadeMs), label = "dpadArrow")
+    val labelColor by animateColorAsState(theme.onBody, tween(themeFadeMs), label = "labelColor")
+    val mutedLabelColor by animateColorAsState(theme.onBodyMuted, tween(themeFadeMs), label = "mutedLabelColor")
 
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val cw = min(maxWidth, maxHeight * CONSOLE_ASPECT)
@@ -118,7 +126,7 @@ fun RetroConsoleShell(
 
             Column(Modifier.fillMaxSize().padding(horizontal = cw * 0.062f)) {
                 Spacer(Modifier.height(ch * 0.022f))
-                ConsoleHeader(cw, ledBrightness)
+                ConsoleHeader(cw, ledBrightness, labelColor, mutedLabelColor)
                 Spacer(Modifier.height(ch * 0.012f))
                 LcdScreen(
                     modifier = Modifier
@@ -129,7 +137,7 @@ fun RetroConsoleShell(
                     content = lcdContent,
                 )
                 Spacer(Modifier.height(ch * 0.010f))
-                DotMatrixLabel()
+                DotMatrixLabel(labelColor, mutedLabelColor)
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     DPad(
                         size = cw * 0.30f,
@@ -140,6 +148,10 @@ fun RetroConsoleShell(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .offset(x = cw * 0.015f, y = ch * 0.035f),
+                        faceLight = dpadLight,
+                        face = dpadFace,
+                        faceDark = dpadDark,
+                        arrowColor = dpadArrow,
                     )
                     // A raised, B lower-left, diagonal like the mocks.
                     Box(
@@ -155,6 +167,7 @@ fun RetroConsoleShell(
                             faceLight = buttonLight,
                             face = button,
                             faceDark = buttonDark,
+                            labelColor = labelColor,
                         )
                         RoundButton(
                             label = "B",
@@ -166,6 +179,7 @@ fun RetroConsoleShell(
                             faceLight = buttonLight,
                             face = button,
                             faceDark = buttonDark,
+                            labelColor = labelColor,
                         )
                     }
                     Row(
@@ -179,12 +193,14 @@ fun RetroConsoleShell(
                             width = cw * 0.115f,
                             onPress = input.onPower,
                             onHeldChange = input.onPowerHeldChange,
+                            labelColor = labelColor,
                         )
                         PillButton(
                             "START",
                             width = cw * 0.115f,
                             onPress = input.onStart,
                             onHeldChange = input.onStartHeldChange,
+                            labelColor = labelColor,
                         )
                     }
                     SpeakerGrill(
@@ -206,7 +222,7 @@ fun RetroConsoleShell(
 }
 
 @Composable
-private fun ConsoleHeader(cw: Dp, ledBrightness: Float) {
+private fun ConsoleHeader(cw: Dp, ledBrightness: Float, labelColor: Color, mutedLabelColor: Color) {
     Box(Modifier.fillMaxWidth()) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -217,7 +233,7 @@ private fun ConsoleHeader(cw: Dp, ledBrightness: Float) {
                 text = "BATTERY",
                 style = PixelDropType.ConsoleLabel,
                 fontSize = 6.sp,
-                color = PixelDropColors.LabelDark,
+                color = labelColor,
             )
         }
         Column(
@@ -227,19 +243,19 @@ private fun ConsoleHeader(cw: Dp, ledBrightness: Float) {
             PixelText(
                 text = "PIXEL DROP",
                 pixel = cw * 0.0092f,
-                color = PixelDropColors.LabelPurple,
+                color = labelColor,
             )
             Spacer(Modifier.height(cw * 0.016f))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AccentLine(cw * 0.055f)
+                AccentLine(cw * 0.055f, mutedLabelColor)
                 Text(
                     text = "CANVAS CLASSICS",
                     style = PixelDropType.AccentLabel,
                     fontSize = 7.sp,
-                    color = PixelDropColors.LabelPurpleMuted,
+                    color = mutedLabelColor,
                     modifier = Modifier.padding(horizontal = cw * 0.02f),
                 )
-                AccentLine(cw * 0.055f)
+                AccentLine(cw * 0.055f, mutedLabelColor)
             }
         }
         Screw(
@@ -252,30 +268,30 @@ private fun ConsoleHeader(cw: Dp, ledBrightness: Float) {
 }
 
 @Composable
-private fun AccentLine(width: Dp) {
+private fun AccentLine(width: Dp, color: Color) {
     Box(
         Modifier
             .width(width)
             .height(1.5.dp)
-            .background(PixelDropColors.LabelPurpleMuted)
+            .background(color)
     )
 }
 
 @Composable
-private fun DotMatrixLabel() {
+private fun DotMatrixLabel(labelColor: Color, mutedLabelColor: Color) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AccentLine(16.dp)
+        AccentLine(16.dp, mutedLabelColor)
         Text(
             text = "DOT MATRIX WITH STEREO SOUND",
             style = PixelDropType.AccentLabel,
             fontSize = 6.sp,
-            color = PixelDropColors.LabelDark,
+            color = labelColor,
             modifier = Modifier.padding(horizontal = 8.dp),
         )
-        AccentLine(16.dp)
+        AccentLine(16.dp, mutedLabelColor)
     }
 }

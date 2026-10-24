@@ -13,3 +13,8 @@ interface ConsolePrefs {
 
 @Composable
 expect fun rememberConsolePrefs(): ConsolePrefs
+
+fun ConsolePrefs.getBoolean(key: String, default: Boolean): Boolean =
+    getString(key)?.let { it == "1" } ?: default
+
+fun ConsolePrefs.putBoolean(key: String, value: Boolean) = putString(key, if (value) "1" else "0")

@@ -9,6 +9,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -17,25 +18,35 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.jasmeet.pixeldrop.game.GAMES
 import com.jasmeet.pixeldrop.game.GameId
+import com.jasmeet.pixeldrop.game.isPlayable
 import com.jasmeet.pixeldrop.ui.components.drawPixelText
 import com.jasmeet.pixeldrop.ui.components.drawPixelTextCentered
 import com.jasmeet.pixeldrop.ui.components.drawPixelTextRightAligned
 import com.jasmeet.pixeldrop.ui.components.pixelTextCellWidth
 import com.jasmeet.pixeldrop.ui.theme.PixelDropColors
+import com.jasmeet.pixeldrop.ui.theme.rememberReducedMotion
+import kotlin.math.floor
 import kotlin.math.min
 
 /** CANVAS CLASSICS menu LCD: header, game list with an inverse selection
  *  bar, and a small live preview of whichever game is highlighted. */
 @Composable
 fun GameMenuScreen(selected: GameId, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "menu-blink")
-    val blinkPhase by transition.animateFloat(
+    // One transition drives everything: the preview demos read it as their loop
+    // phase and the scroll chevrons derive their blink from it (loop = 4 blinks).
+    val transition = rememberInfiniteTransition(label = "menu-demo")
+    val loopPhase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
-        label = "blink",
+        animationSpec = infiniteRepeatable(tween(DEMO_LOOP_MS, easing = LinearEasing)),
+        label = "demo-loop",
     )
+    val painter = remember { DemoPainter() }
+    // Animator scale 0 means the user asked for no motion: hold one frame.
+    val reducedMotion = rememberReducedMotion()
     Canvas(modifier.fillMaxSize()) {
+        val demoT = if (reducedMotion) DEMO_STILL_T else loopPhase.coerceAtMost(0.9999f)
+        val blinkPhase = if (reducedMotion) 0f else (loopPhase * (DEMO_LOOP_MS / 900f)) % 1f
         val w = size.width
         val h = size.height
         val ink = PixelDropColors.LcdDark
@@ -54,7 +65,8 @@ fun GameMenuScreen(selected: GameId, modifier: Modifier = Modifier) {
 
         // Game list: a fixed 4-row viewport that scrolls with the cursor
         // instead of stretching to fit every title — the library outgrew the
-        // LCD once the sixth classic landed. The window slides so the
+        // LCD once the sixth classic landed. The same viewport now carries
+        // all eight; the window slides so the
         // selection is always visible; pixel chevrons hint at off-screen
         // rows above/below. Gap between barLeft and listX must clear the ">"
         // glyph (5 cols + lead-in) or the cursor collides with the label text.
@@ -97,7 +109,7 @@ fun GameMenuScreen(selected: GameId, modifier: Modifier = Modifier) {
         val panelRight = w * 0.965f
         val panelTop = h * 0.20f
         val panelBottom = h * 0.70f
-        drawGamePreview(selected, panelLeft, panelTop, panelRight, panelBottom, ink, blinkPhase)
+        drawGamePreview(selected, panelLeft, panelTop, panelRight, panelBottom, ink, demoT, painter)
 
         // Divider + control hints + footer.
         val ruleY = h * 0.74f
@@ -127,7 +139,7 @@ private fun DrawScope.drawScrollChevron(x: Float, y: Float, px: Float, ink: Colo
     }
 }
 
-/** Bordered mini-LCD box with a faint grid and the selected game's preview. */
+/** Bordered mini-LCD box with a faint grid and the selected game's live demo. */
 private fun DrawScope.drawGamePreview(
     selected: GameId,
     left: Float,
@@ -135,171 +147,52 @@ private fun DrawScope.drawGamePreview(
     right: Float,
     bottom: Float,
     ink: Color,
-    blinkPhase: Float,
+    demoT: Float,
+    painter: DemoPainter,
 ) {
-    val cols = 9
-    val rows = 16
+    val cols = DEMO_COLS
+    val rows = DEMO_ROWS
     val availW = right - left
     val availH = bottom - top
     val cell = min(availW / cols, availH / rows)
     val fieldW = cell * cols
     val fieldH = cell * rows
-    val x0 = left + (availW - fieldW) / 2f
-    val y0 = top + (availH - fieldH) / 2f
+    val x0 = floor(left + (availW - fieldW) / 2f)
+    val y0 = floor(top + (availH - fieldH) / 2f)
 
     drawRect(ink, Offset(x0, y0), Size(fieldW, fieldH), style = Stroke(width = cell * 0.12f))
     val grid = ink.copy(alpha = 0.14f)
     for (c in 1 until cols) drawRect(grid, Offset(x0 + c * cell, y0), Size(1f, fieldH))
     for (r in 1 until rows) drawRect(grid, Offset(x0, y0 + r * cell), Size(fieldW, 1f))
 
-    when (selected) {
-        GameId.PixelDrop -> drawPixelDropPreview(x0, y0, cell, ink)
-        GameId.PixelTrail -> drawPixelTrailPreview(x0, y0, cell, ink, blinkPhase)
-        GameId.BrickPulse -> drawBrickPulsePreview(x0, y0, cell, ink)
-        GameId.OrbitBlaster -> drawOrbitBlasterPreview(x0, y0, cell, ink)
-        GameId.MeteorDodge -> drawMeteorDodgePreview(x0, y0, cell, ink)
-        GameId.PixelRacer -> drawPixelRacerPreview(x0, y0, cell, ink, blinkPhase)
-    }
+    if (selected.isPlayable) painter.draw(this, selected, demoT, x0, y0, cell)
+    else drawComingSoonSprite(x0, y0, fieldW, fieldH, ink, demoT)
 }
 
-private fun DrawScope.fillPreviewCell(x0: Float, y0: Float, cell: Float, r: Int, c: Int, ink: Color, alpha: Float = 1f) {
-    if (alpha <= 0f) return
-    val gap = cell * 0.12f
-    drawRect(
-        color = if (alpha < 1f) ink.copy(alpha = alpha) else ink,
-        topLeft = Offset(x0 + c * cell + gap, y0 + r * cell + gap),
-        size = Size(cell - gap * 2, cell - gap * 2),
-    )
-}
-
-private fun DrawScope.drawPixelDropPreview(x0: Float, y0: Float, cell: Float, ink: Color) {
-    val stack = listOf(
-        15 to 0, 15 to 1, 15 to 2, 15 to 3, 15 to 4, 15 to 5, 15 to 6, 15 to 7, 15 to 8,
-        14 to 0, 14 to 1, 14 to 2, 14 to 4, 14 to 5, 14 to 7, 14 to 8,
-        13 to 1, 13 to 4, 13 to 7,
-    )
-    val falling = listOf(6 to 5, 7 to 4, 7 to 5)
-    (stack + falling).forEach { (r, c) -> fillPreviewCell(x0, y0, cell, r, c, ink) }
-}
-
-private fun DrawScope.drawPixelTrailPreview(x0: Float, y0: Float, cell: Float, ink: Color, blinkPhase: Float) {
-    val trail = listOf(
-        5 to 1, 5 to 2, 5 to 3, 5 to 4, 5 to 5,
-        6 to 5, 7 to 5, 8 to 5, 9 to 5,
-        9 to 4,
-    )
-    trail.forEach { (r, c) -> fillPreviewCell(x0, y0, cell, r, c, ink) }
-    // Blinking food/data dot.
-    val dotAlpha = if (blinkPhase < 0.6f) 1f else 0f
-    fillPreviewCell(x0, y0, cell, 3, 7, ink, alpha = dotAlpha)
-}
-
-private fun DrawScope.drawBrickPulsePreview(x0: Float, y0: Float, cell: Float, ink: Color) {
-    for (c in 0 until 9) {
-        fillPreviewCell(x0, y0, cell, 2, c, ink)
-        fillPreviewCell(x0, y0, cell, 3, c, ink)
-    }
-    fillPreviewCell(x0, y0, cell, 8, 4, ink) // ball
-    listOf(3, 4, 5).forEach { c -> fillPreviewCell(x0, y0, cell, 13, c, ink) } // paddle
-}
-
-private fun DrawScope.drawOrbitBlasterPreview(x0: Float, y0: Float, cell: Float, ink: Color) {
-    val enemyCols = listOf(1, 4, 7)
-    enemyCols.forEach { c ->
-        fillPreviewCell(x0, y0, cell, 1, c, ink)
-        fillPreviewCell(x0, y0, cell, 2, c, ink)
-    }
-    // Tracer dashes climbing from the ship toward the enemies.
-    listOf(5, 7, 9, 11).forEach { r -> fillPreviewCell(x0, y0, cell, r, 4, ink, alpha = 0.6f) }
-    // Player ship.
-    fillPreviewCell(x0, y0, cell, 14, 4, ink)
-    listOf(3, 4, 5).forEach { c -> fillPreviewCell(x0, y0, cell, 15, c, ink) }
-}
-
-private fun DrawScope.drawMeteorDodgePreview(x0: Float, y0: Float, cell: Float, ink: Color) {
-    val meteorCenters = listOf(2 to 7, 4 to 2, 6 to 6, 8 to 3, 10 to 6)
-    meteorCenters.forEach { (r, c) ->
-        fillPreviewCell(x0, y0, cell, r, c, ink)
-        fillPreviewCell(x0, y0, cell, r - 1, c, ink)
-        fillPreviewCell(x0, y0, cell, r + 1, c, ink)
-        fillPreviewCell(x0, y0, cell, r, c - 1, ink)
-        fillPreviewCell(x0, y0, cell, r, c + 1, ink)
-    }
-    fillPreviewCell(x0, y0, cell, 14, 4, ink) // player ship
-    listOf(3, 4, 5).forEach { c -> fillPreviewCell(x0, y0, cell, 15, c, ink) }
-}
-
-/** Mini replica of the in-game road: thin shoulders at the game's road edges,
- *  three dashed lane dividers (four lanes), sprite-style cars, ring coin. */
-private fun DrawScope.drawPixelRacerPreview(x0: Float, y0: Float, cell: Float, ink: Color, blinkPhase: Float) {
-    val fieldW = cell * 9
-    val fieldH = cell * 16
-    // Map the game's 100-unit-wide field onto the preview box.
-    val sx = fieldW / 100f
-    fun rx(x: Float) = x0 + x * sx
-
-    // Shoulders at the road edges (game coords 10..90).
-    drawRect(ink, Offset(rx(10f) - sx * 2f, y0), Size(sx * 2f, fieldH))
-    drawRect(ink, Offset(rx(90f), y0), Size(sx * 2f, fieldH))
-
-    // Three dashed dividers -> four lanes, same as the game road.
-    for (lane in 1 until 4) {
-        val lx = rx(10f + lane * 20f)
-        var dy = cell * 0.3f
-        while (dy < fieldH - cell * 0.6f) {
-            drawRect(ink.copy(alpha = 0.45f), Offset(lx - sx, y0 + dy), Size(sx * 2f, cell * 0.6f))
-            dy += cell * 1.4f
-        }
-    }
-
-    // Oncoming traffic in three lanes (lane centers 20/40/60/80).
-    drawPreviewRacerCar(rx(20f), y0 + fieldH * 0.20f, sx, ink)
-    drawPreviewRacerCar(rx(60f), y0 + fieldH * 0.40f, sx, ink)
-    drawPreviewRacerCar(rx(40f), y0 + fieldH * 0.62f, sx, ink)
-
-    // Blinking ring coin ahead in the player's lane.
-    if (blinkPhase < 0.6f) {
-        val c = Offset(rx(80f), y0 + fieldH * 0.5f)
-        drawCircle(ink, radius = sx * 3.4f, center = c, style = Stroke(width = sx * 1.4f))
-        drawCircle(ink, radius = sx * 1.1f, center = c)
-    }
-
-    // Player car near the bottom, matching RACER_PLAYER_Y's spot on the road.
-    drawPreviewRacerCar(rx(80f), y0 + fieldH * 0.86f, sx, ink)
-}
-
-/** Shrunk copy of the in-game car sprite: hull, cabin notch, four wheel studs. */
-private fun DrawScope.drawPreviewRacerCar(cx: Float, cy: Float, sx: Float, ink: Color) {
-    val w = 12f * sx
-    val h = 16f * sx
-    drawRect(ink, Offset(cx - w * 0.32f, cy - h * 0.46f), Size(w * 0.64f, h * 0.92f))
-    drawRect(
-        PixelDropColors.LcdGreen.copy(alpha = 0.55f),
-        Offset(cx - w * 0.18f, cy - h * 0.16f),
-        Size(w * 0.36f, h * 0.3f),
-    )
-    val wheelW = w * 0.14f
-    val wheelH = h * 0.2f
-    drawRect(ink, Offset(cx - w * 0.5f, cy - h * 0.4f), Size(wheelW, wheelH))
-    drawRect(ink, Offset(cx + w * 0.5f - wheelW, cy - h * 0.4f), Size(wheelW, wheelH))
-    drawRect(ink, Offset(cx - w * 0.5f, cy + h * 0.2f), Size(wheelW, wheelH))
-    drawRect(ink, Offset(cx + w * 0.5f - wheelW, cy + h * 0.2f), Size(wheelW, wheelH))
-}
-
-/** Placeholder LCD for menu slots that don't have a game wired up yet. */
+/** Placeholder LCD for teaser slots: the same padlock sprite the menu preview
+ *  plays, big on the left, with the exact menu title beside it. */
 @Composable
 fun ComingSoonScreen(gameId: GameId, modifier: Modifier = Modifier) {
     val title = GAMES.first { it.id == gameId }.title
+    val loop = rememberInfiniteTransition(label = "soon-loop")
+        .animateFloat(0f, 1f, infiniteRepeatable(tween(DEMO_LOOP_MS, easing = LinearEasing)), label = "soon-t")
+    val painter = remember { DemoPainter() }
+    val reducedMotion = rememberReducedMotion()
     Canvas(modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
         val ink = PixelDropColors.LcdDark
 
         drawCornerMarks()
-        // Sized for the longest title ("ORBIT BLASTER") to stay clear of the
-        // LCD edges — the same glyph-width-vs-px mismatch as the menu list.
-        drawPixelTextCentered(title, w / 2f, h * 0.32f, w / 95f, ink)
-        drawPixelTextCentered("COMING SOON", w / 2f, h * 0.46f, w / 105f, ink)
-        drawPixelTextCentered("B: MENU", w / 2f, h * 0.62f, w / 120f, ink.copy(alpha = 0.8f))
+        val cell = floor(h * 0.78f / DEMO_ROWS)
+        val x0 = floor(w * 0.1f)
+        val y0 = floor((h - cell * DEMO_ROWS) / 2f)
+        val t = if (reducedMotion) DEMO_STILL_T else loop.value.coerceAtMost(0.9999f)
+        drawComingSoonSprite(x0, y0, cell * DEMO_COLS, cell * DEMO_ROWS, ink, t)
+
+        val textCx = x0 + cell * DEMO_COLS + (w - x0 - cell * DEMO_COLS) / 2f
+        drawPixelTextCentered(title, textCx, h * 0.34f, w / 150f, ink)
+        drawPixelTextCentered("COMING SOON", textCx, h * 0.48f, w / 190f, ink.copy(alpha = 0.85f))
+        drawPixelTextCentered("B: MENU", textCx, h * 0.62f, w / 170f, ink.copy(alpha = 0.8f))
     }
 }

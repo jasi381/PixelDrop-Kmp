@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +61,9 @@ private val pressSpring = spring<Float>(dampingRatio = Spring.DampingRatioMedium
  * long two-pill power-off hold doesn't fire their tap actions on the way in;
  * the release after a completed hold lands in the guarded PoweringOff state).
  */
+/** HAPTICS setting: false silences the key-press and auto-repeat pulses below. */
+val LocalHapticsEnabled = compositionLocalOf { true }
+
 @Composable
 fun Modifier.consolePressable(
     repeatable: Boolean = false,
@@ -71,11 +75,12 @@ fun Modifier.consolePressable(
     val currentPressedChange by rememberUpdatedState(onPressedChange)
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    val hapticsEnabled by rememberUpdatedState(LocalHapticsEnabled.current)
     return this.pointerInput(repeatable, fireOnRelease) {
         detectTapGestures(
             onTap = { if (fireOnRelease) currentAction() },
             onPress = {
-                haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
                 currentPressedChange(true)
                 if (!fireOnRelease) currentAction()
                 val repeatJob = if (repeatable) {
@@ -83,7 +88,7 @@ fun Modifier.consolePressable(
                         delay(280)
                         while (isActive) {
                             currentAction()
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                            if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                             delay(110)
                         }
                     }
@@ -106,6 +111,10 @@ fun DPad(
     onLeft: () -> Unit,
     onRight: () -> Unit,
     modifier: Modifier = Modifier,
+    faceLight: Color = PixelDropColors.DpadLight,
+    face: Color = PixelDropColors.DpadBlack,
+    faceDark: Color = PixelDropColors.DpadDark,
+    arrowColor: Color = Color(0xFF4A4A4A),
 ) {
     var pressed by remember { mutableStateOf<DpadDir?>(null) }
     var lastPressedDir by remember { mutableStateOf<DpadDir?>(null) }
@@ -123,7 +132,7 @@ fun DPad(
             val arm = s / 3f
             val r = CornerRadius(arm * 0.22f)
             val base = Brush.verticalGradient(
-                listOf(PixelDropColors.DpadLight, PixelDropColors.DpadBlack, PixelDropColors.DpadDark)
+                listOf(faceLight, face, faceDark)
             )
             // cross
             drawRoundRect(base, topLeft = Offset(arm, 0f), size = Size(arm, s), cornerRadius = r)
@@ -151,7 +160,7 @@ fun DPad(
             // center dish
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(PixelDropColors.DpadDark, PixelDropColors.DpadLight),
+                    listOf(faceDark, faceLight),
                     center = center,
                     radius = arm * 0.55f,
                 ),
@@ -159,7 +168,7 @@ fun DPad(
                 center = center,
             )
             // arrows
-            val arrow = Color(0xFF4A4A4A)
+            val arrow = arrowColor
             fun trianglePath(cx: Float, cy: Float, half: Float, pointUp: Boolean): Path =
                 Path().apply {
                     if (pointUp) {
@@ -219,6 +228,7 @@ fun RoundButton(
     faceLight: Color = PixelDropColors.ButtonPurpleLight,
     face: Color = PixelDropColors.ButtonPurple,
     faceDark: Color = PixelDropColors.ButtonPurpleDark,
+    labelColor: Color = PixelDropColors.LabelDark,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val press by animateFloatAsState(
@@ -271,7 +281,7 @@ fun RoundButton(
         PixelText(
             text = label,
             pixel = size * 0.026f,
-            color = PixelDropColors.LabelDark,
+            color = labelColor,
         )
     }
 }
@@ -285,6 +295,7 @@ fun PillButton(
     onPress: () -> Unit,
     modifier: Modifier = Modifier,
     onHeldChange: (Boolean) -> Unit = {},
+    labelColor: Color = PixelDropColors.LabelDark,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val press by animateFloatAsState(
@@ -339,7 +350,7 @@ fun PillButton(
             text = label,
             style = PixelDropType.ConsoleLabel,
             fontSize = 8.sp,
-            color = PixelDropColors.LabelDark,
+            color = labelColor,
             textAlign = TextAlign.Center,
         )
     }

@@ -43,3 +43,16 @@ xcuserdata/
 
 # Markdown docs stay local
 *.md
+
+# Remaining IDE state (Android Studio / Fleet)
+/.idea/
+.fleet/
+
+# Packaged outputs, heap dumps and signing config
+*.apk
+*.aab
+*.hprof
+/keystore.properties
+
+# Xcode derived data
+DerivedData/

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,10 +55,26 @@ import com.jasmeet.pixeldrop.pixelracer.PixelRacerPhase
 import com.jasmeet.pixeldrop.pixeltrail.PixelTrailEngine
 import com.jasmeet.pixeldrop.pixeltrail.PixelTrailPhase
 import com.jasmeet.pixeldrop.pixeltrail.TrailDirection
+import com.jasmeet.pixeldrop.ui.audio.GatedRetroAudio
 import com.jasmeet.pixeldrop.ui.audio.rememberRetroAudio
 import com.jasmeet.pixeldrop.ui.components.ConsoleInput
 import com.jasmeet.pixeldrop.ui.components.ConsoleCustomizer
 import com.jasmeet.pixeldrop.ui.components.ConsoleCustomizerButton
+import com.jasmeet.pixeldrop.ui.components.LocalHapticsEnabled
+import com.jasmeet.pixeldrop.ui.components.GameThemeHintStrip
+import com.jasmeet.pixeldrop.ui.components.GameThemeIntro
+import com.jasmeet.pixeldrop.ui.components.RetroSettingsMenu
+import com.jasmeet.pixeldrop.ui.components.THEME_FADE_MS
+import com.jasmeet.pixeldrop.ui.settings.GAME_THEME_HINT_MS
+import com.jasmeet.pixeldrop.ui.settings.GAME_THEME_INTRO_CONFIRM_MS
+import com.jasmeet.pixeldrop.ui.settings.GAME_THEME_INTRO_CYCLE_MS
+import com.jasmeet.pixeldrop.ui.settings.GAME_THEME_INTRO_DELAY_MS
+import com.jasmeet.pixeldrop.ui.settings.GAME_THEME_INTRO_GAMES
+import com.jasmeet.pixeldrop.ui.settings.GameThemeIntroStep
+import com.jasmeet.pixeldrop.ui.settings.nextIntroIndex
+import com.jasmeet.pixeldrop.ui.settings.shouldShowGameThemeHint
+import com.jasmeet.pixeldrop.ui.theme.rememberReducedMotion
+import com.jasmeet.pixeldrop.ui.theme.resolveConsoleTheme
 import com.jasmeet.pixeldrop.ui.components.PrivacyPolicyButton
 import com.jasmeet.pixeldrop.ui.components.PrivacyPolicyScreen
 import com.jasmeet.pixeldrop.ui.components.RetroConsoleShell
@@ -78,6 +95,8 @@ import com.jasmeet.pixeldrop.ui.screens.PixelRacerGameOverScreen
 import com.jasmeet.pixeldrop.ui.screens.PixelRacerScreen
 import com.jasmeet.pixeldrop.ui.screens.PixelTrailGameOverScreen
 import com.jasmeet.pixeldrop.ui.screens.PixelTrailScreen
+import com.jasmeet.pixeldrop.ui.platform.getBoolean
+import com.jasmeet.pixeldrop.ui.platform.putBoolean
 import com.jasmeet.pixeldrop.ui.platform.rememberConsolePrefs
 import com.jasmeet.pixeldrop.ui.screens.PowerOffScreen
 import com.jasmeet.pixeldrop.ui.theme.PixelDropColors
@@ -87,6 +106,12 @@ import kotlinx.coroutines.delay
 private enum class AppScreen { Boot, Menu, Game, ComingSoon, PoweringOff, PoweredOff }
 
 private const val CONSOLE_THEME_KEY = "console_theme"
+private const val SOUND_ENABLED_KEY = "sound_enabled"
+private const val HAPTICS_ENABLED_KEY = "haptics_enabled"
+private const val GAME_THEME_ENABLED_KEY = "game_theme_enabled"
+private const val GAME_THEME_TOGGLED_KEY = "game_theme_toggled"
+private const val GAME_THEME_INTRO_DONE_KEY = "game_theme_intro_done"
+private const val GAME_THEME_FADE_MS = 350
 
 /** True while whichever game is currently selected is actually mid-round —
  *  used to decide whether foregrounding the app should resume the shared
@@ -109,17 +134,36 @@ private fun isActiveGameRunning(
         GameId.OrbitBlaster -> orbitEngine.state.phase == OrbitBlasterPhase.Running
         GameId.MeteorDodge -> meteorEngine.state.phase == MeteorDodgePhase.Running
         GameId.PixelRacer -> racerEngine.state.phase == PixelRacerPhase.Running
+        else -> false
     }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun PixelDropApp(windowFocused: Boolean = true) {
-    val soundPlayer = rememberRetroAudio()
     val customizationPrefs = rememberConsolePrefs()
+    var soundEnabled by rememberSaveable {
+        mutableStateOf(customizationPrefs.getBoolean(SOUND_ENABLED_KEY, true))
+    }
+    var hapticsEnabled by rememberSaveable {
+        mutableStateOf(customizationPrefs.getBoolean(HAPTICS_ENABLED_KEY, true))
+    }
+    var gameThemeEnabled by rememberSaveable {
+        mutableStateOf(customizationPrefs.getBoolean(GAME_THEME_ENABLED_KEY, false))
+    }
+    var gameThemeToggled by rememberSaveable {
+        mutableStateOf(customizationPrefs.getBoolean(GAME_THEME_TOGGLED_KEY, false))
+    }
+    var gameThemeIntroDone by rememberSaveable {
+        mutableStateOf(customizationPrefs.getBoolean(GAME_THEME_INTRO_DONE_KEY, false))
+    }
+    val reducedMotion = rememberReducedMotion()
+    val platformAudio = rememberRetroAudio()
+    val soundPlayer = remember(platformAudio) { GatedRetroAudio(platformAudio, soundEnabled) }
     var selectedThemeId by rememberSaveable {
         mutableStateOf(consoleThemeFor(customizationPrefs.getString(CONSOLE_THEME_KEY)).id)
     }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var customizationOpen by rememberSaveable { mutableStateOf(false) }
     var privacyOpen by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(Unit) {
@@ -414,6 +458,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         GameId.OrbitBlaster -> orbitPhase == OrbitBlasterPhase.GameOver
         GameId.MeteorDodge -> meteorPhase == MeteorDodgePhase.GameOver
         GameId.PixelRacer -> racerPhase == PixelRacerPhase.GameOver
+        else -> false
     }
     LaunchedEffect(anyGameOver) {
         if (anyGameOver) soundPlayer.playGameOver()
@@ -516,7 +561,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         screen = AppScreen.Game
     }
 
-    // All six CANVAS CLASSICS are implemented and launch directly.
+    // Playable classics launch directly; the teaser slots open COMING SOON.
     fun launchSelected() {
         when (selectedGameId) {
             GameId.PixelDrop -> startGame()
@@ -525,6 +570,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             GameId.OrbitBlaster -> startOrbitBlaster()
             GameId.MeteorDodge -> startMeteorDodge()
             GameId.PixelRacer -> startPixelRacer()
+            else -> screen = AppScreen.ComingSoon
         }
     }
 
@@ -533,9 +579,97 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         screen = AppScreen.Boot
     }
 
+    // GAME THEME intro: the first time the bare menu shows (and the feature is
+    // still off) an interactive card opens over the LCD. The real shell morphs
+    // through each game's paint (auto-cycling until the D-pad takes over);
+    // A turns the setting on, B leaves it for later and points at SETTINGS.
+    var themeIntroOpen by rememberSaveable { mutableStateOf(false) }
+    var themeIntroStep by rememberSaveable { mutableStateOf(GameThemeIntroStep.Offer) }
+    var themeIntroIndex by rememberSaveable { mutableIntStateOf(0) }
+    var themeIntroManual by remember { mutableStateOf(false) }
+    var laterStrip by remember { mutableStateOf(false) }
+    val bareMenu = screen == AppScreen.Menu && !settingsOpen && !customizationOpen && !privacyOpen
+    val introShowing = themeIntroOpen && bareMenu
+    val introOffered = shouldShowGameThemeHint(
+        introDone = gameThemeIntroDone,
+        gameThemeEnabled = gameThemeEnabled,
+        onMenuWithNoOverlay = bareMenu,
+    )
+    // Read at press time by the input handlers (state-backed, so never stale).
+    fun introActive(): Boolean =
+        themeIntroOpen && screen == AppScreen.Menu && !settingsOpen && !customizationOpen && !privacyOpen
+    fun closeIntro(later: Boolean) {
+        themeIntroOpen = false
+        if (!gameThemeIntroDone) {
+            gameThemeIntroDone = true
+            customizationPrefs.putBoolean(GAME_THEME_INTRO_DONE_KEY, true)
+        }
+        if (later) laterStrip = true
+    }
+    fun introNav(delta: Int): Boolean {
+        if (!introActive()) return false
+        if (themeIntroStep == GameThemeIntroStep.Offer) {
+            themeIntroManual = true
+            themeIntroIndex = nextIntroIndex(themeIntroIndex, delta, GAME_THEME_INTRO_GAMES.size)
+            soundPlayer.playMenuSelect()
+        } else {
+            closeIntro(later = false)
+        }
+        return true
+    }
+    fun introConfirm(): Boolean {
+        if (!introActive()) return false
+        if (themeIntroStep == GameThemeIntroStep.Offer) {
+            gameThemeEnabled = true
+            gameThemeToggled = true
+            customizationPrefs.putBoolean(GAME_THEME_ENABLED_KEY, true)
+            customizationPrefs.putBoolean(GAME_THEME_TOGGLED_KEY, true)
+            themeIntroStep = GameThemeIntroStep.Confirmed
+        } else {
+            closeIntro(later = false)
+        }
+        return true
+    }
+    fun introLater(): Boolean {
+        if (!introActive()) return false
+        closeIntro(later = themeIntroStep == GameThemeIntroStep.Offer)
+        return true
+    }
+    LaunchedEffect(introOffered) {
+        if (introOffered && !themeIntroOpen) {
+            delay(GAME_THEME_INTRO_DELAY_MS)
+            themeIntroStep = GameThemeIntroStep.Offer
+            themeIntroIndex = 0
+            themeIntroManual = false
+            themeIntroOpen = true
+        }
+    }
+    LaunchedEffect(introShowing, themeIntroStep, themeIntroManual) {
+        if (introShowing && themeIntroStep == GameThemeIntroStep.Offer && !themeIntroManual) {
+            while (true) {
+                delay(GAME_THEME_INTRO_CYCLE_MS)
+                themeIntroIndex = nextIntroIndex(themeIntroIndex, 1, GAME_THEME_INTRO_GAMES.size)
+            }
+        }
+    }
+    LaunchedEffect(introShowing, themeIntroStep) {
+        if (introShowing && themeIntroStep == GameThemeIntroStep.Confirmed) {
+            delay(GAME_THEME_INTRO_CONFIRM_MS)
+            closeIntro(later = false)
+        }
+    }
+    val hintVisible = laterStrip && bareMenu
+    LaunchedEffect(laterStrip) {
+        if (laterStrip) {
+            delay(GAME_THEME_HINT_MS)
+            laterStrip = false
+        }
+    }
+
     val input = remember {
         ConsoleInput(
-            onLeft = {
+            onLeft = onLeft@{
+                if (introNav(-1)) return@onLeft
                 if (screen == AppScreen.Game) {
                     when (selectedGameId) {
                         GameId.PixelDrop -> if (engine.state.phase == GamePhase.Running) {
@@ -558,10 +692,12 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             racerEngine.moveLeft()
                             soundPlayer.playMove()
                         }
+                        else -> Unit
                     }
                 }
             },
-            onRight = {
+            onRight = onRight@{
+                if (introNav(1)) return@onRight
                 if (screen == AppScreen.Game) {
                     when (selectedGameId) {
                         GameId.PixelDrop -> if (engine.state.phase == GamePhase.Running) {
@@ -584,10 +720,12 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             racerEngine.moveRight()
                             soundPlayer.playMove()
                         }
+                        else -> Unit
                     }
                 }
             },
-            onDown = {
+            onDown = onDown@{
+                if (introNav(1)) return@onDown
                 when {
                     screen == AppScreen.Menu -> {
                         selectedGameId = selectedGameId.next()
@@ -619,7 +757,8 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         pauseIndex = (pauseIndex + 1) % PAUSE_MENU_ITEMS.size
                 }
             },
-            onUp = {
+            onUp = onUp@{
+                if (introNav(-1)) return@onUp
                 when {
                     screen == AppScreen.Menu -> {
                         selectedGameId = selectedGameId.previous()
@@ -653,7 +792,8 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         pauseIndex = (pauseIndex + PAUSE_MENU_ITEMS.size - 1) % PAUSE_MENU_ITEMS.size
                 }
             },
-            onA = {
+            onA = a@{
+                if (introConfirm()) return@a
                 when (screen) {
                     AppScreen.Boot, AppScreen.PoweringOff, AppScreen.ComingSoon -> Unit
                     AppScreen.PoweredOff -> powerOn()
@@ -717,10 +857,12 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             }
                             PixelRacerPhase.GameOver -> startPixelRacer()
                         }
+                        else -> Unit
                     }
                 }
             },
-            onB = {
+            onB = b@{
+                if (introLater()) return@b
                 when (screen) {
                     AppScreen.ComingSoon -> screen = AppScreen.Menu
                     AppScreen.Game -> when (selectedGameId) {
@@ -752,11 +894,13 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         GameId.PixelRacer -> if (racerEngine.state.phase == PixelRacerPhase.GameOver) {
                             screen = AppScreen.Menu
                         }
+                        else -> Unit
                     }
                     else -> Unit
                 }
             },
-            onStart = {
+            onStart = start@{
+                if (introConfirm()) return@start
                 when (screen) {
                     AppScreen.Boot -> {
                         bootElapsed = BootTimeline.TOTAL_MS
@@ -813,6 +957,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                             PixelRacerPhase.Paused -> racerEngine.resume()
                             PixelRacerPhase.GameOver -> startPixelRacer()
                         }
+                        else -> Unit
                     }
                     AppScreen.PoweringOff, AppScreen.ComingSoon -> Unit
                     AppScreen.PoweredOff -> powerOn()
@@ -839,9 +984,24 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         else -> 1f
     }
 
+    // GAME THEME (opt-in): while a round is on screen the shell wears the game's
+    // paint; everywhere else (boot, menu, off) it is the user's own pick. The
+    // intro previews paints live, so the shell also morphs while it is open.
+    val playingGame = when {
+        screen == AppScreen.Game -> selectedGameId
+        screen == AppScreen.PoweringOff && frozenScreen == AppScreen.Game -> selectedGameId
+        else -> null
+    }
+    val introPreviewGame = if (introShowing) GAME_THEME_INTRO_GAMES[themeIntroIndex] else null
+    val morphing = gameThemeEnabled || introPreviewGame != null
+    val shellTheme = resolveConsoleTheme(consoleThemeFor(selectedThemeId), introPreviewGame ?: playingGame, morphing)
+    val shellFadeMs = if (morphing) (if (reducedMotion) 0 else GAME_THEME_FADE_MS) else THEME_FADE_MS
+
+    BackHandler(enabled = settingsOpen) { settingsOpen = false }
     BackHandler(enabled = customizationOpen) { customizationOpen = false }
     BackHandler(enabled = privacyOpen) { privacyOpen = false }
 
+    CompositionLocalProvider(LocalHapticsEnabled provides hapticsEnabled) {
     Box(
         Modifier
             .fillMaxSize()
@@ -854,7 +1014,8 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             input = input,
             lcdBrightness = lcdBrightness,
             ledBrightness = ledBrightness,
-            theme = consoleThemeFor(selectedThemeId),
+            theme = shellTheme,
+            themeFadeMs = shellFadeMs,
             modifier = Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
@@ -862,7 +1023,21 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         ) {
             when (screen) {
                 AppScreen.Boot -> BootScreen(bootElapsed)
-                AppScreen.Menu -> GameMenuScreen(selected = selectedGameId)
+                AppScreen.Menu -> {
+                    GameMenuScreen(selected = selectedGameId)
+                    GameThemeHintStrip(
+                        visible = hintVisible,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                    )
+                    GameThemeIntro(
+                        visible = introShowing,
+                        step = themeIntroStep,
+                        previewGame = GAME_THEME_INTRO_GAMES[themeIntroIndex],
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
                 AppScreen.ComingSoon -> ComingSoonScreen(selectedGameId)
                 AppScreen.Game -> when (selectedGameId) {
                     GameId.PixelDrop -> when (engine.state.phase) {
@@ -895,6 +1070,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                         PixelRacerPhase.Paused -> PauseScreen(pauseIndex)
                         PixelRacerPhase.GameOver -> PixelRacerGameOverScreen(racerEngine.state)
                     }
+                    else -> Unit
                 }
                 AppScreen.PoweringOff -> {
                     // Frozen content stays visible until the collapse curtain
@@ -934,6 +1110,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                                     PixelRacerPhase.Paused -> PauseScreen(pauseIndex)
                                     PixelRacerPhase.GameOver -> PixelRacerGameOverScreen(racerEngine.state)
                                 }
+                                else -> Unit
                             }
                             else -> Unit
                         }
@@ -945,7 +1122,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         }
 
         AnimatedVisibility(
-            visible = screen == AppScreen.Menu && !customizationOpen && !privacyOpen,
+            visible = screen == AppScreen.Menu && !settingsOpen && !customizationOpen && !privacyOpen,
             modifier = Modifier
                 .align(androidx.compose.ui.Alignment.TopEnd)
                 .safeDrawingPadding()
@@ -955,16 +1132,18 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             exit = fadeOut() + scaleOut(targetScale = 0.6f),
         ) {
             ConsoleCustomizerButton(
-                expanded = customizationOpen,
+                expanded = settingsOpen || customizationOpen,
                 onClick = {
                     soundPlayer.playMenuSelect()
-                    customizationOpen = true
+                    // Opening settings is how the hint asks to be used: count it as seen.
+                    laterStrip = false
+                    settingsOpen = true
                 },
             )
         }
 
         AnimatedVisibility(
-            visible = screen == AppScreen.Menu && !customizationOpen && !privacyOpen,
+            visible = screen == AppScreen.Menu && !settingsOpen && !customizationOpen && !privacyOpen,
             modifier = Modifier
                 .align(androidx.compose.ui.Alignment.TopStart)
                 .safeDrawingPadding()
@@ -981,6 +1160,39 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             )
         }
 
+        RetroSettingsMenu(
+            visible = settingsOpen,
+            soundEnabled = soundEnabled,
+            hapticsEnabled = hapticsEnabled,
+            gameThemeEnabled = gameThemeEnabled,
+            showGameThemeNew = !gameThemeToggled,
+            onCustomize = {
+                soundPlayer.playMenuSelect()
+                settingsOpen = false
+                customizationOpen = true
+            },
+            onSoundChanged = { enabled ->
+                soundEnabled = enabled
+                soundPlayer.enabled = enabled
+                customizationPrefs.putBoolean(SOUND_ENABLED_KEY, enabled)
+                soundPlayer.playMenuSelect()
+            },
+            onHapticsChanged = { enabled ->
+                hapticsEnabled = enabled
+                customizationPrefs.putBoolean(HAPTICS_ENABLED_KEY, enabled)
+                soundPlayer.playMenuSelect()
+            },
+            onGameThemeChanged = { enabled ->
+                gameThemeEnabled = enabled
+                gameThemeToggled = true
+                customizationPrefs.putBoolean(GAME_THEME_ENABLED_KEY, enabled)
+                customizationPrefs.putBoolean(GAME_THEME_TOGGLED_KEY, true)
+                soundPlayer.playMenuSelect()
+            },
+            onDismiss = { settingsOpen = false },
+            modifier = Modifier.zIndex(3f),
+        )
+
         ConsoleCustomizer(
             visible = customizationOpen,
             selectedThemeId = selectedThemeId,
@@ -990,6 +1202,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                 soundPlayer.playMenuSelect()
             },
             onDismiss = { customizationOpen = false },
+            gameThemeEnabled = gameThemeEnabled,
             modifier = Modifier.zIndex(3f),
         )
 
@@ -1003,6 +1216,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         ) {
             PrivacyPolicyScreen(onClose = { privacyOpen = false })
         }
+    }
     }
 }
 

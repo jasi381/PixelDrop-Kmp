@@ -1,6 +1,8 @@
 package com.jasmeet.pixeldrop.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 
 /** A paint job for the console shell: body plastic plus A/B button colors.
  *  D-pad, pills and labels stay constant across themes, like real hardware
@@ -15,7 +17,31 @@ data class ConsoleTheme(
     val buttonLight: Color,
     val button: Color,
     val buttonDark: Color,
-)
+) {
+    /** Highest-contrast monochrome ink for labels printed on this shell. */
+    val onBody: Color get() = highestContrastInk(body)
+
+    /** Secondary shell copy keeps the same contrast direction at lower emphasis. */
+    val onBodyMuted: Color get() = onBody.copy(alpha = 0.72f)
+
+    /** Theme-tinted D-pad tones stay darker than A/B while sharing their hue. */
+    val dpadLight: Color get() = lerp(buttonLight, bodyDark, 0.32f)
+    val dpadFace: Color get() = lerp(button, Color.Black, 0.38f)
+    val dpadDark: Color get() = lerp(buttonDark, Color.Black, 0.28f)
+    val onDpad: Color get() = highestContrastInk(dpadFace).copy(alpha = 0.72f)
+}
+
+internal fun highestContrastInk(background: Color): Color {
+    val dark = Color.Black
+    val light = Color.White
+    return if (contrastRatio(background, dark) >= contrastRatio(background, light)) dark else light
+}
+
+internal fun contrastRatio(a: Color, b: Color): Float {
+    val lighter = maxOf(a.luminance(), b.luminance())
+    val darker = minOf(a.luminance(), b.luminance())
+    return (lighter + 0.05f) / (darker + 0.05f)
+}
 
 /** First entry is the factory ivory look and the fallback for unknown ids. */
 val CONSOLE_THEMES: List<ConsoleTheme> = listOf(
