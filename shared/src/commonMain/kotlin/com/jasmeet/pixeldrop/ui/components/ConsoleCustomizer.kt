@@ -225,7 +225,7 @@ fun RetroSettingsMenu(
                 ToggleSettingCard(
                     name = "Haptics",
                     title = "HAPTICS",
-                    onSubtitle = "KEY-TAP PULSES",
+                    onSubtitle = "KEY-TAP + IMPACT PULSES",
                     offSubtitle = "VIBRATION OFF",
                     enabled = hapticsEnabled,
                     onChanged = onHapticsChanged,
@@ -234,7 +234,7 @@ fun RetroSettingsMenu(
                 ToggleSettingCard(
                     name = if (showGameThemeNew) "Game theme, new" else "Game theme",
                     title = "GAME THEME",
-                    onSubtitle = "SHELL PAINT ADAPTS PER GAME",
+                    onSubtitle = "PAINT, KEYS + DECALS ADAPT",
                     offSubtitle = "SHELL STAYS YOUR PAINT",
                     enabled = gameThemeEnabled,
                     onChanged = onGameThemeChanged,
@@ -701,7 +701,7 @@ private fun GameThemeOverrideNotice() {
             .clip(RoundedCornerShape(3.dp))
             .background(LabPanelRaised)
             .border(1.dp, PixelDropColors.SynthSun, RoundedCornerShape(3.dp))
-            .semantics { contentDescription = "Game theme is on. Games repaint the console while you play. Your pick is used on the menu." }
+            .semantics { contentDescription = "Game theme is on. Games repaint the console and adapt its keys and decals while you play. Your pick is used on the menu." }
             .padding(10.dp),
     ) {
         Text(
@@ -714,7 +714,7 @@ private fun GameThemeOverrideNotice() {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "EACH GAME REPAINTS THE SHELL WHILE YOU PLAY. YOUR PICK (BASE) SHOWS ON THE MENU.",
+            text = "EACH GAME REPAINTS THE SHELL AND ADAPTS KEYS + DECALS WHILE YOU PLAY. YOUR PICK (BASE) SHOWS ON THE MENU.",
             color = LabMuted,
             fontSize = 9.sp,
             lineHeight = 13.sp,

@@ -21,7 +21,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,15 +35,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
+import com.jasmeet.pixeldrop.ui.haptics.ConsoleButton
 import com.jasmeet.pixeldrop.ui.theme.PixelDropColors
 import com.jasmeet.pixeldrop.ui.theme.PixelDropType
 import kotlinx.coroutines.delay
@@ -61,26 +59,26 @@ private val pressSpring = spring<Float>(dampingRatio = Spring.DampingRatioMedium
  * long two-pill power-off hold doesn't fire their tap actions on the way in;
  * the release after a completed hold lands in the guarded PoweringOff state).
  */
-/** HAPTICS setting: false silences the key-press and auto-repeat pulses below. */
-val LocalHapticsEnabled = compositionLocalOf { true }
-
 @Composable
 fun Modifier.consolePressable(
     repeatable: Boolean = false,
     fireOnRelease: Boolean = false,
     onPressedChange: (Boolean) -> Unit = {},
+    /** Fires once on finger-down, before [action]; the host maps it to a haptic. */
+    onPressFeedback: () -> Unit = {},
     action: () -> Unit,
 ): Modifier {
     val currentAction by rememberUpdatedState(action)
     val currentPressedChange by rememberUpdatedState(onPressedChange)
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
-    val hapticsEnabled by rememberUpdatedState(LocalHapticsEnabled.current)
+    val currentPressFeedback by rememberUpdatedState(onPressFeedback)
     return this.pointerInput(repeatable, fireOnRelease) {
         detectTapGestures(
             onTap = { if (fireOnRelease) currentAction() },
             onPress = {
-                if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.VirtualKey)
+                // One haptic per physical press, chosen by the host; auto-repeat
+                // steps below stay silent so holding a direction never hums.
+                currentPressFeedback()
                 currentPressedChange(true)
                 if (!fireOnRelease) currentAction()
                 val repeatJob = if (repeatable) {
@@ -88,7 +86,6 @@ fun Modifier.consolePressable(
                         delay(280)
                         while (isActive) {
                             currentAction()
-                            if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
                             delay(110)
                         }
                     }
@@ -100,6 +97,9 @@ fun Modifier.consolePressable(
         )
     }
 }
+
+/** How strongly an unused arm melts into the body: a plain dim, deepened by either rocker style. */
+fun dpadFlatness(rocker: Float, verticalRocker: Float): Float = 0.55f + 0.2f * maxOf(rocker, verticalRocker)
 
 private enum class DpadDir { Up, Down, Left, Right }
 
@@ -115,6 +115,22 @@ fun DPad(
     face: Color = PixelDropColors.DpadBlack,
     faceDark: Color = PixelDropColors.DpadDark,
     arrowColor: Color = Color(0xFF4A4A4A),
+    onButtonPress: (ConsoleButton) -> Unit = {},
+    /** Finger lifted from UP / DOWN (or the gesture cancelled); lets a game treat the arm as a held latch. */
+    onUpRelease: () -> Unit = {},
+    onDownRelease: () -> Unit = {},
+    /** 0..1 strength of each arm. Below 1 the arm is toned toward [dimColor] and its arrow fades;
+     *  the arm keeps its hit box and still works. All 1 = today's look. */
+    upEmphasis: Float = 1f,
+    downEmphasis: Float = 1f,
+    leftEmphasis: Float = 1f,
+    rightEmphasis: Float = 1f,
+    /** 0..1: horizontal-only "rocker" styling (flatter unused arms plus a centre pivot groove). */
+    rocker: Float = 0f,
+    /** 0..1: vertical-only "rocker" styling (flatter left/right arms plus a horizontal pivot groove). */
+    verticalRocker: Float = 0f,
+    /** The body plastic the unused arms melt toward. */
+    dimColor: Color = Color.Unspecified,
 ) {
     var pressed by remember { mutableStateOf<DpadDir?>(null) }
     var lastPressedDir by remember { mutableStateOf<DpadDir?>(null) }
@@ -157,6 +173,14 @@ fun DPad(
                     )
                 }
             }
+            // Unused arms sink toward the body colour; a rocker also flattens them.
+            if (dimColor != Color.Unspecified) {
+                val flat = dpadFlatness(rocker, verticalRocker)
+                if (upEmphasis < 0.999f) drawRoundRect(dimColor.copy(alpha = flat * (1f - upEmphasis)), Offset(arm, 0f), Size(arm, arm), r)
+                if (downEmphasis < 0.999f) drawRoundRect(dimColor.copy(alpha = flat * (1f - downEmphasis)), Offset(arm, arm * 2), Size(arm, arm), r)
+                if (leftEmphasis < 0.999f) drawRoundRect(dimColor.copy(alpha = flat * (1f - leftEmphasis)), Offset(0f, arm), Size(arm, arm), r)
+                if (rightEmphasis < 0.999f) drawRoundRect(dimColor.copy(alpha = flat * (1f - rightEmphasis)), Offset(arm * 2, arm), Size(arm, arm), r)
+            }
             // center dish
             drawCircle(
                 brush = Brush.radialGradient(
@@ -179,13 +203,30 @@ fun DPad(
                     close()
                 }
             val ah = arm * 0.22f
-            drawPath(trianglePath(s / 2f, arm * 0.42f, ah, true), arrow)
-            drawPath(trianglePath(s / 2f, s - arm * 0.42f, ah, false), arrow)
+            fun fade(e: Float) = arrow.copy(alpha = arrow.alpha * (0.3f + 0.7f * e))
+            drawPath(trianglePath(s / 2f, arm * 0.42f, ah, true), fade(upEmphasis))
+            drawPath(trianglePath(s / 2f, s - arm * 0.42f, ah, false), fade(downEmphasis))
             rotate(degrees = -90f, pivot = Offset(arm * 0.42f, s / 2f)) {
-                drawPath(trianglePath(arm * 0.42f, s / 2f, ah, true), arrow)
+                drawPath(trianglePath(arm * 0.42f, s / 2f, ah, true), fade(leftEmphasis))
             }
             rotate(degrees = 90f, pivot = Offset(s - arm * 0.42f, s / 2f)) {
-                drawPath(trianglePath(s - arm * 0.42f, s / 2f, ah, true), arrow)
+                drawPath(trianglePath(s - arm * 0.42f, s / 2f, ah, true), fade(rightEmphasis))
+            }
+            // vertical rocker: the pivot groove runs left-right across the centre
+            if (verticalRocker > 0.01f) {
+                drawRect(
+                    Color.Black.copy(alpha = 0.35f * verticalRocker),
+                    topLeft = Offset(arm * 0.9f, s / 2f - s * 0.008f),
+                    size = Size(arm * 1.2f, s * 0.016f),
+                )
+            }
+            // rocker pivot groove across the centre
+            if (rocker > 0.01f) {
+                drawRect(
+                    Color.Black.copy(alpha = 0.35f * rocker),
+                    topLeft = Offset(s / 2f - s * 0.008f, arm * 0.9f),
+                    size = Size(s * 0.016f, arm * 1.2f),
+                )
             }
         }
         val arm = size / 3
@@ -193,25 +234,25 @@ fun DPad(
             Modifier
                 .align(Alignment.TopCenter)
                 .size(arm, arm)
-                .consolePressable(onPressedChange = { pressed = if (it) DpadDir.Up else null }, action = onUp)
+                .consolePressable(onPressedChange = { pressed = if (it) DpadDir.Up else null; if (!it) onUpRelease() }, onPressFeedback = { onButtonPress(ConsoleButton.Up) }, action = onUp)
         )
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
                 .size(arm, arm)
-                .consolePressable(repeatable = true, onPressedChange = { pressed = if (it) DpadDir.Down else null }, action = onDown)
+                .consolePressable(repeatable = true, onPressedChange = { pressed = if (it) DpadDir.Down else null; if (!it) onDownRelease() }, onPressFeedback = { onButtonPress(ConsoleButton.Down) }, action = onDown)
         )
         Box(
             Modifier
                 .align(Alignment.CenterStart)
                 .size(arm, arm)
-                .consolePressable(repeatable = true, onPressedChange = { pressed = if (it) DpadDir.Left else null }, action = onLeft)
+                .consolePressable(repeatable = true, onPressedChange = { pressed = if (it) DpadDir.Left else null }, onPressFeedback = { onButtonPress(ConsoleButton.Left) }, action = onLeft)
         )
         Box(
             Modifier
                 .align(Alignment.CenterEnd)
                 .size(arm, arm)
-                .consolePressable(repeatable = true, onPressedChange = { pressed = if (it) DpadDir.Right else null }, action = onRight)
+                .consolePressable(repeatable = true, onPressedChange = { pressed = if (it) DpadDir.Right else null }, onPressFeedback = { onButtonPress(ConsoleButton.Right) }, action = onRight)
         )
     }
 }
@@ -229,6 +270,18 @@ fun RoundButton(
     face: Color = PixelDropColors.ButtonPurple,
     faceDark: Color = PixelDropColors.ButtonPurpleDark,
     labelColor: Color = PixelDropColors.LabelDark,
+    /** Fires when the finger lifts (or the gesture is cancelled); lets a game
+     *  treat the button as hold-to-charge, e.g. RIDGE RUNNER's variable jump. */
+    onRelease: () -> Unit = {},
+    onPressFeedback: () -> Unit = {},
+    /** 0..1 key strength. Below 1 the key loses its gloss and tones toward [dimColor];
+     *  it stays fully pressable. 1 = today's look. */
+    emphasis: Float = 1f,
+    /** Visual scale only (e.g. 1.12 for the dominant key, 0.88 for an unused one).
+     *  The touch target stays [size] whatever is drawn. */
+    drawScale: Float = 1f,
+    /** The body plastic an unused key melts toward. */
+    dimColor: Color = Color.Unspecified,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val press by animateFloatAsState(
@@ -236,44 +289,63 @@ fun RoundButton(
         animationSpec = pressSpring,
         label = "roundButtonPress",
     )
+    val flat = (1f - emphasis).coerceIn(0f, 1f)
+    val dimmed = flat > 0.001f && dimColor != Color.Unspecified
+    val drawFace = if (dimmed) lerp(face, dimColor, flat * 0.5f) else face
+    val drawLight = if (dimmed) lerp(faceLight, drawFace, flat) else faceLight
+    val drawDark = if (dimmed) lerp(faceDark, drawFace, flat * 0.6f) else faceDark
+    val shownLabel = if (dimmed) labelColor.copy(alpha = labelColor.alpha * (1f - 0.35f * flat)) else labelColor
     Column(modifier, horizontalAlignment = Alignment.End) {
+        // The outer box is the fixed touch target; only the inner layer is scaled and depressed.
         Box(
             Modifier
                 .size(size)
-                // Real elevation shadow shrinks as the button sinks, plus a
-                // physical push-down + squash so it reads as a 3D key, not a flat swap.
-                .shadow(elevation = (7f - press * 6f).dp, shape = CircleShape, clip = false)
-                .graphicsLayer {
-                    translationY = this.size.height * 0.06f * press
-                    scaleX = 1f - 0.05f * press
-                    scaleY = 1f - 0.05f * press
-                }
-                .consolePressable(onPressedChange = { pressed = it }, action = onPress)
+                .consolePressable(
+                    onPressedChange = {
+                        pressed = it
+                        if (!it) onRelease()
+                    },
+                    onPressFeedback = onPressFeedback,
+                    action = onPress,
+                )
         ) {
-            Canvas(Modifier.fillMaxSize()) {
-                val r = this.size.minDimension / 2f
-                // recessed ring
-                drawCircle(Color.Black.copy(alpha = 0.25f), radius = r, center = center)
-                val topShift = r * 0.35f
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            lerp(faceLight, face, press),
-                            face,
-                            faceDark,
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    // Real elevation shadow shrinks as the button sinks, plus a
+                    // physical push-down + squash so it reads as a 3D key, not a flat swap.
+                    .shadow(elevation = ((7f - press * 6f) * (1f - 0.6f * flat)).dp, shape = CircleShape, clip = false)
+                    .graphicsLayer {
+                        translationY = this.size.height * 0.06f * press
+                        scaleX = (1f - 0.05f * press) * drawScale
+                        scaleY = (1f - 0.05f * press) * drawScale
+                    }
+            ) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val r = this.size.minDimension / 2f
+                    // recessed ring
+                    drawCircle(Color.Black.copy(alpha = 0.25f), radius = r, center = center)
+                    val topShift = r * 0.35f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                lerp(drawLight, drawFace, press),
+                                drawFace,
+                                drawDark,
+                            ),
+                            center = center - Offset(topShift * 0.6f, topShift),
+                            radius = r * 1.35f,
                         ),
-                        center = center - Offset(topShift * 0.6f, topShift),
-                        radius = r * 1.35f,
-                    ),
-                    radius = r * 0.92f,
-                    center = center,
-                )
-                // specular highlight fades as the surface flattens under press
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.22f - 0.12f * press),
-                    radius = r * 0.28f,
-                    center = center - Offset(r * 0.25f, r * 0.4f),
-                )
+                        radius = r * 0.92f,
+                        center = center,
+                    )
+                    // specular highlight fades as the surface flattens under press
+                    drawCircle(
+                        color = Color.White.copy(alpha = (0.22f - 0.12f * press) * (1f - flat)),
+                        radius = r * 0.28f,
+                        center = center - Offset(r * 0.25f, r * 0.4f),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(3.dp))
@@ -281,7 +353,7 @@ fun RoundButton(
         PixelText(
             text = label,
             pixel = size * 0.026f,
-            color = labelColor,
+            color = shownLabel,
         )
     }
 }
@@ -296,6 +368,7 @@ fun PillButton(
     modifier: Modifier = Modifier,
     onHeldChange: (Boolean) -> Unit = {},
     labelColor: Color = PixelDropColors.LabelDark,
+    onPressFeedback: () -> Unit = {},
 ) {
     var pressed by remember { mutableStateOf(false) }
     val press by animateFloatAsState(
@@ -319,6 +392,7 @@ fun PillButton(
                         pressed = it
                         onHeldChange(it)
                     },
+                    onPressFeedback = onPressFeedback,
                     action = onPress,
                 )
         ) {

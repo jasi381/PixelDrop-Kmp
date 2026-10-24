@@ -1,6 +1,8 @@
 package com.jasmeet.pixeldrop.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,7 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +41,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
+import com.jasmeet.pixeldrop.ui.haptics.ConsoleButton
 import com.jasmeet.pixeldrop.ui.theme.CONSOLE_THEMES
+import com.jasmeet.pixeldrop.ui.theme.GameControls
+import com.jasmeet.pixeldrop.ui.theme.GameShellStyle
+import com.jasmeet.pixeldrop.ui.theme.Livery
 import com.jasmeet.pixeldrop.ui.theme.ConsoleTheme
 import com.jasmeet.pixeldrop.ui.theme.PixelDropColors
 import com.jasmeet.pixeldrop.ui.theme.PixelDropType
@@ -51,11 +59,19 @@ class ConsoleInput(
     val onLeft: () -> Unit = {},
     val onRight: () -> Unit = {},
     val onA: () -> Unit = {},
+    /** A lifted; only games with hold-to-charge behavior need it. */
+    val onAReleased: () -> Unit = {},
+    /** D-pad UP / DOWN lifted; only games with a held-direction latch (RALLY DUEL's paddle) need them. */
+    val onUpReleased: () -> Unit = {},
+    val onDownReleased: () -> Unit = {},
     val onB: () -> Unit = {},
     val onStart: () -> Unit = {},
     val onPower: () -> Unit = {},
     val onStartHeldChange: (Boolean) -> Unit = {},
     val onPowerHeldChange: (Boolean) -> Unit = {},
+    /** Finger-down on any physical control (once per press, never on auto-repeat).
+     *  The host maps it to at most one haptic and may use it to dismiss hints. */
+    val onButtonPress: (ConsoleButton) -> Unit = {},
 )
 
 private const val CONSOLE_ASPECT = 0.545f
@@ -72,8 +88,13 @@ fun RetroConsoleShell(
     lcdBrightness: Float = 1f,
     ledBrightness: Float = 1f,
     theme: ConsoleTheme = CONSOLE_THEMES.first(),
-    /** Cross-fade length for paint changes; the host shortens it for the per-game morph. */
+    themeChangeToken: Int = 0,
+    /** Cross-fade length for paint changes; the host shortens it for the
+     *  per-game morph and zeroes it under reduced motion. */
     themeFadeMs: Int = THEME_FADE_MS,
+    /** GAME THEME adaptation (key emphasis, decals, badge, teaching captions).
+     *  The default reproduces the plain shell exactly. */
+    style: GameShellStyle = GameShellStyle.Default,
     lcdContent: @Composable BoxScope.() -> Unit,
 ) {
     // The paint job cross-fades rather than snapping, so picking a theme in
@@ -91,6 +112,37 @@ fun RetroConsoleShell(
     val dpadArrow by animateColorAsState(theme.onDpad, tween(themeFadeMs), label = "dpadArrow")
     val labelColor by animateColorAsState(theme.onBody, tween(themeFadeMs), label = "labelColor")
     val mutedLabelColor by animateColorAsState(theme.onBodyMuted, tween(themeFadeMs), label = "mutedLabelColor")
+    // Control emphasis eases with the same fade as the paint (snaps at 0 ms for reduced motion).
+    val fadeSpec = tween<Float>(themeFadeMs)
+    val upE by animateFloatAsState(if (style.upUsed) 1f else 0f, fadeSpec, label = "upE")
+    val downE by animateFloatAsState(if (style.downUsed) 1f else 0f, fadeSpec, label = "downE")
+    val leftE by animateFloatAsState(if (style.leftUsed) 1f else 0f, fadeSpec, label = "leftE")
+    val rightE by animateFloatAsState(if (style.rightUsed) 1f else 0f, fadeSpec, label = "rightE")
+    val rockerE by animateFloatAsState(if (style.rocker) 1f else 0f, fadeSpec, label = "rockerE")
+    val rockerVE by animateFloatAsState(if (style.verticalRocker) 1f else 0f, fadeSpec, label = "rockerVE")
+    val aE by animateFloatAsState(if (style.aUsed) 1f else 0f, fadeSpec, label = "aE")
+    val bE by animateFloatAsState(if (style.bUsed) 1f else 0f, fadeSpec, label = "bE")
+    val aScale by animateFloatAsState(style.aScale, fadeSpec, label = "aScale")
+    val bScale by animateFloatAsState(style.bScale, fadeSpec, label = "bScale")
+    val liveryAlpha by animateFloatAsState(if (style.livery != null) 1f else 0f, fadeSpec, label = "liveryAlpha")
+    val captionAlpha by animateFloatAsState(
+        if (style.captionsVisible) 1f else 0f,
+        tween(if (themeFadeMs == 0) 0 else 300),
+        label = "captionAlpha",
+    )
+    // Keep the last game's decals/captions around so they can fade out instead of vanishing.
+    val liveryHolder = remember { arrayOfNulls<Livery>(1) }
+    val controlsHolder = remember { arrayOfNulls<GameControls>(1) }
+    style.livery?.let { liveryHolder[0] = it }
+    style.controls?.let { controlsHolder[0] = it }
+    val captionControls = controlsHolder[0]
+    val respray = remember { Animatable(1f) }
+    LaunchedEffect(themeChangeToken) {
+        if (themeChangeToken > 0) {
+            respray.snapTo(0f)
+            respray.animateTo(1f, tween(620))
+        }
+    }
 
     BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val cw = min(maxWidth, maxHeight * CONSOLE_ASPECT)
@@ -138,20 +190,37 @@ fun RetroConsoleShell(
                 )
                 Spacer(Modifier.height(ch * 0.010f))
                 DotMatrixLabel(labelColor, mutedLabelColor)
-                Box(Modifier.fillMaxWidth().weight(1f)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        // Silk-screen decals + badge print on the body, behind every control.
+                        .liveryBehind(liveryHolder[0], liveryAlpha, LiveryInk(labelColor, button, buttonDark))
+                ) {
                     DPad(
                         size = cw * 0.30f,
                         onUp = input.onUp,
                         onDown = input.onDown,
                         onLeft = input.onLeft,
                         onRight = input.onRight,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .offset(x = cw * 0.015f, y = ch * 0.035f),
                         faceLight = dpadLight,
                         face = dpadFace,
                         faceDark = dpadDark,
                         arrowColor = dpadArrow,
+                        onButtonPress = input.onButtonPress,
+                        onUpRelease = input.onUpReleased,
+                        onDownRelease = input.onDownReleased,
+                        upEmphasis = upE,
+                        downEmphasis = downE,
+                        leftEmphasis = leftE,
+                        rightEmphasis = rightE,
+                        rocker = rockerE,
+                        verticalRocker = rockerVE,
+                        dimColor = body,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset(x = cw * 0.015f, y = ch * 0.035f)
+                            .dpadLegend(captionControls, cw, labelColor, captionAlpha),
                     )
                     // A raised, B lower-left, diagonal like the mocks.
                     Box(
@@ -163,23 +232,35 @@ fun RetroConsoleShell(
                             label = "A",
                             size = cw * 0.155f,
                             onPress = input.onA,
-                            modifier = Modifier.align(Alignment.TopEnd),
+                            onRelease = input.onAReleased,
+                            onPressFeedback = { input.onButtonPress(ConsoleButton.A) },
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .captionBelowEnd(captionControls?.a, cw, labelColor, captionAlpha),
                             faceLight = buttonLight,
                             face = button,
                             faceDark = buttonDark,
                             labelColor = labelColor,
+                            emphasis = aE,
+                            drawScale = aScale,
+                            dimColor = body,
                         )
                         RoundButton(
                             label = "B",
                             size = cw * 0.155f,
                             onPress = input.onB,
+                            onPressFeedback = { input.onButtonPress(ConsoleButton.B) },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .offset(x = -cw * 0.17f, y = ch * 0.052f),
+                                .offset(x = -cw * 0.17f, y = ch * 0.052f)
+                                .captionBelowEnd(captionControls?.b, cw, labelColor, captionAlpha),
                             faceLight = buttonLight,
                             face = button,
                             faceDark = buttonDark,
                             labelColor = labelColor,
+                            emphasis = bE,
+                            drawScale = bScale,
+                            dimColor = body,
                         )
                     }
                     Row(
@@ -193,6 +274,7 @@ fun RetroConsoleShell(
                             width = cw * 0.115f,
                             onPress = input.onPower,
                             onHeldChange = input.onPowerHeldChange,
+                            onPressFeedback = { input.onButtonPress(ConsoleButton.Power) },
                             labelColor = labelColor,
                         )
                         PillButton(
@@ -200,7 +282,9 @@ fun RetroConsoleShell(
                             width = cw * 0.115f,
                             onPress = input.onStart,
                             onHeldChange = input.onStartHeldChange,
+                            onPressFeedback = { input.onButtonPress(ConsoleButton.Start) },
                             labelColor = labelColor,
+                            modifier = Modifier.captionAboveCenter(captionControls?.start, cw, labelColor, captionAlpha),
                         )
                     }
                     SpeakerGrill(
@@ -214,6 +298,33 @@ fun RetroConsoleShell(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .offset(x = cw * 0.005f, y = -ch * 0.012f),
+                    )
+                }
+            }
+
+            // A short pixel scan makes a paint selection feel like the shell
+            // is being re-sprayed instead of merely cross-fading.
+            if (respray.value < 1f) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val progress = respray.value
+                    val bandY = size.height * progress
+                    val cell = size.width * 0.022f
+                    val row = (bandY / cell).toInt()
+                    for (column in 0..46) {
+                        val phase = ((column * 7 + row * 3) % 9) / 9f
+                        val y = bandY - phase * cell * 5f
+                        if (y in 0f..size.height) {
+                            drawRect(
+                                color = labelColor.copy(alpha = (1f - progress) * 0.32f),
+                                topLeft = Offset(column * cell, y),
+                                size = Size(cell * 0.72f, cell * 0.72f),
+                            )
+                        }
+                    }
+                    drawRect(
+                        color = labelColor.copy(alpha = 0.28f * (1f - progress)),
+                        topLeft = Offset(0f, bandY.coerceIn(0f, size.height)),
+                        size = Size(size.width, cell * 0.22f),
                     )
                 }
             }

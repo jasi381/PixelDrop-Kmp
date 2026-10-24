@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,6 +19,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -60,8 +61,19 @@ import com.jasmeet.pixeldrop.ui.audio.rememberRetroAudio
 import com.jasmeet.pixeldrop.ui.components.ConsoleInput
 import com.jasmeet.pixeldrop.ui.components.ConsoleCustomizer
 import com.jasmeet.pixeldrop.ui.components.ConsoleCustomizerButton
-import com.jasmeet.pixeldrop.ui.components.LocalHapticsEnabled
 import com.jasmeet.pixeldrop.ui.components.GameThemeHintStrip
+import com.jasmeet.pixeldrop.ui.haptics.GameHaptics
+import com.jasmeet.pixeldrop.ui.haptics.HapticEvent
+import com.jasmeet.pixeldrop.ui.haptics.RetroHaptics
+import com.jasmeet.pixeldrop.ui.haptics.ShellMode
+import com.jasmeet.pixeldrop.ui.haptics.buttonHaptic
+import com.jasmeet.pixeldrop.ui.haptics.gameEndHaptic
+import com.jasmeet.pixeldrop.ui.haptics.rememberRetroHaptics
+import com.jasmeet.pixeldrop.ui.settings.controlCaptionsSeenKey
+import com.jasmeet.pixeldrop.ui.theme.CONTROL_CAPTION_MS
+import com.jasmeet.pixeldrop.ui.theme.advanceCaptionClock
+import com.jasmeet.pixeldrop.ui.theme.gameShellStyleFor
+import com.jasmeet.pixeldrop.ui.theme.shouldTeachCaptions
 import com.jasmeet.pixeldrop.ui.components.GameThemeIntro
 import com.jasmeet.pixeldrop.ui.components.RetroSettingsMenu
 import com.jasmeet.pixeldrop.ui.components.THEME_FADE_MS
@@ -138,6 +150,28 @@ private fun isActiveGameRunning(
     }
 }
 
+/**
+ * Feeds haptics from engine state changes without touching any engine:
+ * [diff] compares the previous and current state and names at most one event.
+ * Collected off [snapshotFlow], so it never restarts a coroutine per frame;
+ * [active] gates on the screen so nothing fires outside a live round.
+ */
+@Composable
+private fun <S> HapticDiffEffect(
+    haptics: RetroHaptics,
+    state: () -> S,
+    active: () -> Boolean,
+    diff: (S, S) -> HapticEvent?,
+) {
+    LaunchedEffect(Unit) {
+        var previous = state()
+        snapshotFlow(state).collect { current ->
+            if (active()) haptics.play(diff(previous, current))
+            previous = current
+        }
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun PixelDropApp(windowFocused: Boolean = true) {
@@ -158,6 +192,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         mutableStateOf(customizationPrefs.getBoolean(GAME_THEME_INTRO_DONE_KEY, false))
     }
     val reducedMotion = rememberReducedMotion()
+    val haptics = rememberRetroHaptics(hapticsEnabled)
     val platformAudio = rememberRetroAudio()
     val soundPlayer = remember(platformAudio) { GatedRetroAudio(platformAudio, soundEnabled) }
     var selectedThemeId by rememberSaveable {
@@ -165,6 +200,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
     }
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var customizationOpen by rememberSaveable { mutableStateOf(false) }
+    var themeChangeToken by remember { mutableIntStateOf(0) }
     var privacyOpen by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(Unit) {
         onDispose { soundPlayer.release() }
@@ -203,10 +239,12 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
+                    haptics.setLifecycleActive(false)
                     soundPlayer.pauseGameplayMusic()
                     soundPlayer.pauseSfx()
                 }
                 Lifecycle.Event.ON_RESUME -> {
+                    haptics.setLifecycleActive(true)
                     soundPlayer.resumeSfx()
                     if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
                         soundPlayer.startGameplayMusic()
@@ -223,6 +261,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
     // Activity RESUMED for its live thumbnail and never fires onPause, so
     // audio would otherwise keep playing behind the app switcher.
     LaunchedEffect(windowFocused) {
+        haptics.setWindowFocused(windowFocused)
         if (!windowFocused) {
             soundPlayer.pauseGameplayMusic()
             soundPlayer.pauseSfx()
@@ -461,8 +500,19 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         else -> false
     }
     LaunchedEffect(anyGameOver) {
-        if (anyGameOver) soundPlayer.playGameOver()
+        if (anyGameOver) {
+            soundPlayer.playGameOver()
+            haptics.play(gameEndHaptic(isNewBest = false))
+        }
     }
+
+    // Haptics from engine state changes: the same diff idea as the sound triggers.
+    HapticDiffEffect(haptics, { engine.state }, { screen == AppScreen.Game && selectedGameId == GameId.PixelDrop }, GameHaptics::pixelDrop)
+    HapticDiffEffect(haptics, { trailEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.PixelTrail }, GameHaptics::pixelTrail)
+    HapticDiffEffect(haptics, { brickEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.BrickPulse }, GameHaptics::brickPulse)
+    HapticDiffEffect(haptics, { orbitEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.OrbitBlaster }, GameHaptics::orbitBlaster)
+    HapticDiffEffect(haptics, { meteorEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.MeteorDodge }, GameHaptics::meteorDodge)
+    HapticDiffEffect(haptics, { racerEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.PixelRacer }, GameHaptics::pixelRacer)
 
     // Gameplay music follows whichever game is active: playing while a round
     // runs, paused with the pause menu, stopped (and rewound) everywhere else.
@@ -513,6 +563,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             frozenMeteorPhase = meteorEngine.state.phase
             frozenRacerPhase = racerEngine.state.phase
             soundPlayer.playShutdown()
+            haptics.play(HapticEvent.Power)
             screen = AppScreen.PoweringOff
         }
     }
@@ -575,6 +626,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
     }
 
     fun powerOn() {
+        haptics.play(HapticEvent.Power)
         bootElapsed = 0
         screen = AppScreen.Boot
     }
@@ -625,6 +677,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             customizationPrefs.putBoolean(GAME_THEME_ENABLED_KEY, true)
             customizationPrefs.putBoolean(GAME_THEME_TOGGLED_KEY, true)
             themeIntroStep = GameThemeIntroStep.Confirmed
+            haptics.play(HapticEvent.Success)
         } else {
             closeIntro(later = false)
         }
@@ -968,6 +1021,22 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                 if (screen == AppScreen.PoweredOff) powerOn()
             },
             onPowerHeldChange = { powerHeld = it },
+            onButtonPress = { button ->
+                // Any button dismisses the hint; the press itself gets at most one haptic.
+                if (screen == AppScreen.Menu) laterStrip = false
+                val mode = when (screen) {
+                    AppScreen.PoweredOff -> ShellMode.Off
+                    AppScreen.Menu -> ShellMode.Menu
+                    AppScreen.Game ->
+                        if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
+                            ShellMode.GameRunning
+                        } else {
+                            ShellMode.GameIdle
+                        }
+                    else -> ShellMode.Other
+                }
+                haptics.play(buttonHaptic(mode, button))
+            },
         )
     }
 
@@ -997,11 +1066,44 @@ fun PixelDropApp(windowFocused: Boolean = true) {
     val shellTheme = resolveConsoleTheme(consoleThemeFor(selectedThemeId), introPreviewGame ?: playingGame, morphing)
     val shellFadeMs = if (morphing) (if (reducedMotion) 0 else GAME_THEME_FADE_MS) else THEME_FADE_MS
 
+    // One-time control captions: the first round of each game with GAME THEME on shows
+    // the used-control captions for ~5 s of running time (frozen while paused), then
+    // they fade for good. The seen flag persists per game the moment the clock starts.
+    var captionsSeen by remember {
+        mutableStateOf(GameId.entries.filter { customizationPrefs.getBoolean(controlCaptionsSeenKey(it), false) }.toSet())
+    }
+    var captionSession by remember { mutableStateOf<GameId?>(null) }
+    var captionRemainingMs by remember { mutableLongStateOf(CONTROL_CAPTION_MS) }
+    val captionGame = if (screen == AppScreen.Game) selectedGameId else null
+    val captionRoundRunning = isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)
+    LaunchedEffect(captionGame, gameThemeEnabled) {
+        captionSession = if (shouldTeachCaptions(gameThemeEnabled, captionGame, captionGame != null && captionGame in captionsSeen)) captionGame else null
+        captionRemainingMs = CONTROL_CAPTION_MS
+    }
+    LaunchedEffect(anyGameOver) { if (anyGameOver) captionSession = null }
+    LaunchedEffect(captionSession, captionRoundRunning) {
+        val teaching = captionSession ?: return@LaunchedEffect
+        if (!captionRoundRunning) return@LaunchedEffect
+        if (teaching !in captionsSeen) {
+            captionsSeen = captionsSeen + teaching
+            customizationPrefs.putBoolean(controlCaptionsSeenKey(teaching), true)
+        }
+        var last = withFrameMillis { it }
+        while (captionRemainingMs > 0L) {
+            withFrameMillis { now ->
+                captionRemainingMs = advanceCaptionClock(captionRemainingMs, now - last, true)
+                last = now
+            }
+        }
+    }
+    val captionsVisible = captionSession != null && captionRemainingMs > 0L && !anyGameOver
+    // Keys, decals and captions adapt only under GAME THEME with a round on screen.
+    val shellStyle = gameShellStyleFor(playingGame, gameThemeEnabled, captionsVisible)
+
     BackHandler(enabled = settingsOpen) { settingsOpen = false }
     BackHandler(enabled = customizationOpen) { customizationOpen = false }
     BackHandler(enabled = privacyOpen) { privacyOpen = false }
 
-    CompositionLocalProvider(LocalHapticsEnabled provides hapticsEnabled) {
     Box(
         Modifier
             .fillMaxSize()
@@ -1015,7 +1117,9 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             lcdBrightness = lcdBrightness,
             ledBrightness = ledBrightness,
             theme = shellTheme,
+            themeChangeToken = themeChangeToken,
             themeFadeMs = shellFadeMs,
+            style = shellStyle,
             modifier = Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
@@ -1137,6 +1241,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                     soundPlayer.playMenuSelect()
                     // Opening settings is how the hint asks to be used: count it as seen.
                     laterStrip = false
+                    haptics.play(HapticEvent.Select)
                     settingsOpen = true
                 },
             )
@@ -1180,7 +1285,10 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             onHapticsChanged = { enabled ->
                 hapticsEnabled = enabled
                 customizationPrefs.putBoolean(HAPTICS_ENABLED_KEY, enabled)
+                haptics.setEnabled(enabled)
                 soundPlayer.playMenuSelect()
+                // Tiny preview so switching it on is felt; off stays silent.
+                if (enabled) haptics.play(HapticEvent.Medium)
             },
             onGameThemeChanged = { enabled ->
                 gameThemeEnabled = enabled
@@ -1188,6 +1296,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
                 customizationPrefs.putBoolean(GAME_THEME_ENABLED_KEY, enabled)
                 customizationPrefs.putBoolean(GAME_THEME_TOGGLED_KEY, true)
                 soundPlayer.playMenuSelect()
+                haptics.play(HapticEvent.Select)
             },
             onDismiss = { settingsOpen = false },
             modifier = Modifier.zIndex(3f),
@@ -1199,7 +1308,9 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             onThemeSelected = { theme ->
                 selectedThemeId = theme.id
                 customizationPrefs.putString(CONSOLE_THEME_KEY, theme.id)
+                themeChangeToken += 1
                 soundPlayer.playMenuSelect()
+                haptics.play(HapticEvent.Select)
             },
             onDismiss = { customizationOpen = false },
             gameThemeEnabled = gameThemeEnabled,
@@ -1216,7 +1327,6 @@ fun PixelDropApp(windowFocused: Boolean = true) {
         ) {
             PrivacyPolicyScreen(onClose = { privacyOpen = false })
         }
-    }
     }
 }
 
