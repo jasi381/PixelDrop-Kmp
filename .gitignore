@@ -56,3 +56,6 @@ xcuserdata/
 
 # Xcode derived data
 DerivedData/
+
+# Store listing / icon source art stays local
+/art/
