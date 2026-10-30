@@ -59,6 +59,7 @@ import com.jasmeet.pixeldrop.pixeltrail.TrailDirection
 import com.jasmeet.pixeldrop.ui.audio.GatedRetroAudio
 import com.jasmeet.pixeldrop.ui.audio.rememberRetroAudio
 import com.jasmeet.pixeldrop.ui.components.ConsoleInput
+import com.jasmeet.pixeldrop.ui.components.FoldPosture
 import com.jasmeet.pixeldrop.ui.components.ConsoleCustomizer
 import com.jasmeet.pixeldrop.ui.components.ConsoleCustomizerButton
 import com.jasmeet.pixeldrop.ui.components.GameThemeHintStrip
@@ -174,7 +175,7 @@ private fun <S> HapticDiffEffect(
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun PixelDropApp(windowFocused: Boolean = true) {
+fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPosture.Flat) {
     val customizationPrefs = rememberConsolePrefs()
     var soundEnabled by rememberSaveable {
         mutableStateOf(customizationPrefs.getBoolean(SOUND_ENABLED_KEY, true))
@@ -1120,6 +1121,7 @@ fun PixelDropApp(windowFocused: Boolean = true) {
             themeChangeToken = themeChangeToken,
             themeFadeMs = shellFadeMs,
             style = shellStyle,
+            posture = posture,
             modifier = Modifier
                 .fillMaxSize()
                 .safeDrawingPadding()
