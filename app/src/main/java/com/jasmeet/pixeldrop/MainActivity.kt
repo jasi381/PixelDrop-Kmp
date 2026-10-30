@@ -15,7 +15,14 @@ import androidx.compose.material3.TextButton
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
 import com.jasmeet.pixeldrop.ui.PixelDropApp
+import com.jasmeet.pixeldrop.ui.components.FoldPosture
+import kotlinx.coroutines.launch
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
@@ -30,6 +37,7 @@ class MainActivity : ComponentActivity() {
     // thumbnail and never fires onPause — window focus is what actually drops,
     // so audio pause/resume is driven off this instead of the lifecycle alone.
     private var windowFocused by mutableStateOf(true)
+    private var posture by mutableStateOf(FoldPosture.Flat)
     private lateinit var appUpdateManager: AppUpdateManager
     private var availableUpdate by mutableStateOf<AppUpdateInfo?>(null)
     private var updateDownloaded by mutableStateOf(false)
@@ -51,8 +59,9 @@ class MainActivity : ComponentActivity() {
         appUpdateManager = AppUpdateManagerFactory.create(this)
         appUpdateManager.registerListener(updateListener)
         checkForOptionalUpdate()
+        observeFold()
         setContent {
-            PixelDropApp(windowFocused = windowFocused)
+            PixelDropApp(windowFocused = windowFocused, posture = posture)
             val update = availableUpdate
             if (update != null) {
                 AlertDialog(
@@ -102,6 +111,25 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         if (::appUpdateManager.isInitialized) appUpdateManager.unregisterListener(updateListener)
         super.onDestroy()
+    }
+
+    /** Half-open fold (hinge axis picks tabletop vs book) drives the split console layouts. */
+    private fun observeFold() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                WindowInfoTracker.getOrCreate(this@MainActivity)
+                    .windowLayoutInfo(this@MainActivity)
+                    .collect { info ->
+                        val fold = info.displayFeatures.filterIsInstance<FoldingFeature>()
+                            .firstOrNull { it.state == FoldingFeature.State.HALF_OPENED }
+                        posture = when {
+                            fold == null -> FoldPosture.Flat
+                            fold.orientation == FoldingFeature.Orientation.HORIZONTAL -> FoldPosture.Tabletop
+                            else -> FoldPosture.Book
+                        }
+                    }
+            }
+        }
     }
 
     /** Flexible updates stay optional and silently no-op for sideloaded builds. */

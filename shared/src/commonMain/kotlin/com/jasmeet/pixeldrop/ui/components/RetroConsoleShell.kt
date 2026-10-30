@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,7 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +78,13 @@ class ConsoleInput(
 )
 
 private const val CONSOLE_ASPECT = 0.545f
+
+// Estimated face (header + LCD + label) and control-area heights as a multiple of the body width;
+// the control area stays above ShellGeometry.AREA_H_MIN so decals and captions keep their room.
+private const val FACE_H = 1.22f
+private const val CONTROLS_H = 0.80f
+private const val WIDE_ASPECT = 1.8f
+private const val HINGE_GAP = 0.04f
 const val THEME_FADE_MS = 450
 
 /**
@@ -95,6 +105,8 @@ fun RetroConsoleShell(
     /** GAME THEME adaptation (key emphasis, decals, badge, teaching captions).
      *  The default reproduces the plain shell exactly. */
     style: GameShellStyle = GameShellStyle.Default,
+    /** Half-open fold state; picks the split layouts so nothing sits on the hinge. */
+    posture: FoldPosture = FoldPosture.Flat,
     lcdContent: @Composable BoxScope.() -> Unit,
 ) {
     // The paint job cross-fades rather than snapping, so picking a theme in
@@ -144,191 +156,334 @@ fun RetroConsoleShell(
         }
     }
 
-    BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val cw = min(maxWidth, maxHeight * CONSOLE_ASPECT)
-        val ch = cw / CONSOLE_ASPECT
-        val corner = cw * 0.09f
-        val shape = RoundedCornerShape(corner)
+    // Movable so a fold/unfold layout switch keeps the running game's state.
+    val latestLcd by rememberUpdatedState(lcdContent)
+    val lcd = remember { movableContentOf<BoxScope> { latestLcd(it) } }
 
-        Box(
-            Modifier
-                .size(cw, ch)
-                .shadow(elevation = 22.dp, shape = shape, spotColor = Color.Black, ambientColor = Color.Black)
-                .clip(shape)
-                .background(Brush.verticalGradient(listOf(bodyLight, body, bodyDark)))
+    // Everything below is laid out from a reference console width [cw] (and its
+    // portrait height [ch]) so each layout can scale the same parts independently.
+    val faceBlock: @Composable (Dp, Dp) -> Unit = { cw, ch ->
+        Spacer(Modifier.height(ch * 0.022f))
+        ConsoleHeader(cw, ledBrightness, labelColor, mutedLabelColor)
+        Spacer(Modifier.height(ch * 0.012f))
+        LcdScreen(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.02f),
+            brightness = lcdBrightness,
+            corner = cw * 0.045f,
+        ) { lcd(this) }
+        Spacer(Modifier.height(ch * 0.010f))
+        DotMatrixLabel(labelColor, mutedLabelColor)
+    }
+    val dpadKey: @Composable (Dp, Modifier) -> Unit = { cw, m ->
+        DPad(
+            size = cw * 0.30f,
+            onUp = input.onUp,
+            onDown = input.onDown,
+            onLeft = input.onLeft,
+            onRight = input.onRight,
+            faceLight = dpadLight,
+            face = dpadFace,
+            faceDark = dpadDark,
+            arrowColor = dpadArrow,
+            onButtonPress = input.onButtonPress,
+            onUpRelease = input.onUpReleased,
+            onDownRelease = input.onDownReleased,
+            upEmphasis = upE,
+            downEmphasis = downE,
+            leftEmphasis = leftE,
+            rightEmphasis = rightE,
+            rocker = rockerE,
+            verticalRocker = rockerVE,
+            dimColor = body,
+            modifier = m.dpadLegend(captionControls, cw, labelColor, captionAlpha),
+        )
+    }
+    // A raised, B lower-left, diagonal like the mocks.
+    val abKeys: @Composable (Dp, Dp, Modifier) -> Unit = { cw, ch, m ->
+        Box(m) {
+            RoundButton(
+                label = "A",
+                size = cw * 0.155f,
+                onPress = input.onA,
+                onRelease = input.onAReleased,
+                onPressFeedback = { input.onButtonPress(ConsoleButton.A) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .captionBelowEnd(captionControls?.a, cw, labelColor, captionAlpha),
+                faceLight = buttonLight,
+                face = button,
+                faceDark = buttonDark,
+                labelColor = labelColor,
+                emphasis = aE,
+                drawScale = aScale,
+                dimColor = body,
+            )
+            RoundButton(
+                label = "B",
+                size = cw * 0.155f,
+                onPress = input.onB,
+                onPressFeedback = { input.onButtonPress(ConsoleButton.B) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = -cw * 0.17f, y = ch * 0.052f)
+                    .captionBelowEnd(captionControls?.b, cw, labelColor, captionAlpha),
+                faceLight = buttonLight,
+                face = button,
+                faceDark = buttonDark,
+                labelColor = labelColor,
+                emphasis = bE,
+                drawScale = bScale,
+                dimColor = body,
+            )
+        }
+    }
+    val powerPill: @Composable (Dp) -> Unit = { cw ->
+        PillButton(
+            "POWER",
+            width = cw * 0.115f,
+            onPress = input.onPower,
+            onHeldChange = input.onPowerHeldChange,
+            onPressFeedback = { input.onButtonPress(ConsoleButton.Power) },
+            labelColor = labelColor,
+        )
+    }
+    val startPill: @Composable (Dp) -> Unit = { cw ->
+        PillButton(
+            "START",
+            width = cw * 0.115f,
+            onPress = input.onStart,
+            onHeldChange = input.onStartHeldChange,
+            onPressFeedback = { input.onButtonPress(ConsoleButton.Start) },
+            labelColor = labelColor,
+            modifier = Modifier.captionAboveCenter(captionControls?.start, cw, labelColor, captionAlpha),
+        )
+    }
+    // The portrait control area, also reused under the hinge in the split layouts.
+    val controlsArea: @Composable BoxScope.(Dp, Dp) -> Unit = { cw, ch ->
+        dpadKey(cw, Modifier.align(Alignment.TopStart).offset(x = cw * 0.015f, y = ch * 0.035f))
+        abKeys(cw, ch, Modifier.align(Alignment.TopEnd).offset(x = -cw * 0.005f, y = ch * 0.018f))
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(x = cw * 0.16f, y = -ch * 0.030f),
+            horizontalArrangement = Arrangement.spacedBy(cw * 0.05f),
         ) {
-            // Molded inset line + edge shading.
-            Canvas(Modifier.fillMaxSize()) {
-                val inset = size.width * 0.028f
-                drawRoundRect(
-                    color = edge.copy(alpha = 0.55f),
-                    topLeft = Offset(inset, inset),
-                    size = Size(size.width - inset * 2, size.height - inset * 2),
-                    cornerRadius = CornerRadius(corner.toPx() * 0.75f),
-                    style = Stroke(width = size.width * 0.004f),
-                )
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.5f),
-                    topLeft = Offset(inset * 1.25f, inset * 1.25f),
-                    size = Size(size.width - inset * 2.5f, size.height - inset * 2.5f),
-                    cornerRadius = CornerRadius(corner.toPx() * 0.72f),
-                    style = Stroke(width = size.width * 0.002f),
-                )
+            powerPill(cw)
+            startPill(cw)
+        }
+        SpeakerGrill(
+            width = cw * 0.21f,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = -cw * 0.02f, y = -ch * 0.028f),
+        )
+        Screw(
+            size = cw * 0.028f,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(x = cw * 0.005f, y = -ch * 0.012f),
+        )
+    }
+    val shellBody: @Composable (Modifier, Dp, @Composable BoxScope.() -> Unit) -> Unit = { m, cw, content ->
+        ShellBody(m, cw, bodyLight, body, bodyDark, edge) {
+            content()
+            // A short pixel scan makes a paint selection feel like the shell
+            // is being re-sprayed instead of merely cross-fading.
+            if (respray.value < 1f) RespraySweep(Modifier.matchParentSize(), respray.value, labelColor)
+        }
+    }
+    // Split layouts: one body holds the face (LCD up top), the other the controls.
+    val faceBody: @Composable (Dp) -> Unit = { cw ->
+        shellBody(Modifier.width(cw), cw) {
+            Column(Modifier.padding(horizontal = cw * 0.062f)) {
+                faceBlock(cw, cw / CONSOLE_ASPECT)
+                Spacer(Modifier.height(cw * 0.03f))
             }
+        }
+    }
+    val controlsBody: @Composable (Dp) -> Unit = { cw ->
+        shellBody(Modifier.size(cw, cw * CONTROLS_H), cw) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(start = cw * 0.062f, end = cw * 0.062f, top = cw * 0.03f)
+                    // Silk-screen decals + badge print on the body, behind every control.
+                    .liveryBehind(liveryHolder[0], liveryAlpha, LiveryInk(labelColor, button, buttonDark))
+            ) { controlsArea(cw, cw / CONSOLE_ASPECT) }
+        }
+    }
 
-            Column(Modifier.fillMaxSize().padding(horizontal = cw * 0.062f)) {
-                Spacer(Modifier.height(ch * 0.022f))
-                ConsoleHeader(cw, ledBrightness, labelColor, mutedLabelColor)
-                Spacer(Modifier.height(ch * 0.012f))
-                LcdScreen(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1.02f),
-                    brightness = lcdBrightness,
-                    corner = cw * 0.045f,
-                    content = lcdContent,
-                )
-                Spacer(Modifier.height(ch * 0.010f))
-                DotMatrixLabel(labelColor, mutedLabelColor)
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        // Silk-screen decals + badge print on the body, behind every control.
-                        .liveryBehind(liveryHolder[0], liveryAlpha, LiveryInk(labelColor, button, buttonDark))
-                ) {
-                    DPad(
-                        size = cw * 0.30f,
-                        onUp = input.onUp,
-                        onDown = input.onDown,
-                        onLeft = input.onLeft,
-                        onRight = input.onRight,
-                        faceLight = dpadLight,
-                        face = dpadFace,
-                        faceDark = dpadDark,
-                        arrowColor = dpadArrow,
-                        onButtonPress = input.onButtonPress,
-                        onUpRelease = input.onUpReleased,
-                        onDownRelease = input.onDownReleased,
-                        upEmphasis = upE,
-                        downEmphasis = downE,
-                        leftEmphasis = leftE,
-                        rightEmphasis = rightE,
-                        rocker = rockerE,
-                        verticalRocker = rockerVE,
-                        dimColor = body,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .offset(x = cw * 0.015f, y = ch * 0.035f)
-                            .dpadLegend(captionControls, cw, labelColor, captionAlpha),
-                    )
-                    // A raised, B lower-left, diagonal like the mocks.
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = -cw * 0.005f, y = ch * 0.018f)
-                    ) {
-                        RoundButton(
-                            label = "A",
-                            size = cw * 0.155f,
-                            onPress = input.onA,
-                            onRelease = input.onAReleased,
-                            onPressFeedback = { input.onButtonPress(ConsoleButton.A) },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .captionBelowEnd(captionControls?.a, cw, labelColor, captionAlpha),
-                            faceLight = buttonLight,
-                            face = button,
-                            faceDark = buttonDark,
-                            labelColor = labelColor,
-                            emphasis = aE,
-                            drawScale = aScale,
-                            dimColor = body,
-                        )
-                        RoundButton(
-                            label = "B",
-                            size = cw * 0.155f,
-                            onPress = input.onB,
-                            onPressFeedback = { input.onButtonPress(ConsoleButton.B) },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = -cw * 0.17f, y = ch * 0.052f)
-                                .captionBelowEnd(captionControls?.b, cw, labelColor, captionAlpha),
-                            faceLight = buttonLight,
-                            face = button,
-                            faceDark = buttonDark,
-                            labelColor = labelColor,
-                            emphasis = bE,
-                            drawScale = bScale,
-                            dimColor = body,
-                        )
+    BoxWithConstraints(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // Read once: the DSL marker hides these from nested Box/Row/Column lambdas.
+        val maxW = maxWidth
+        val maxH = maxHeight
+        val layout = consoleLayoutFor(maxW, maxH, posture)
+        val firstLayout = remember { booleanArrayOf(true) }
+        LaunchedEffect(layout) {
+            if (firstLayout[0]) {
+                firstLayout[0] = false
+            } else if (themeFadeMs > 0) {
+                respray.snapTo(0f)
+                respray.animateTo(1f, tween(620))
+            }
+        }
+
+        when (layout) {
+            ConsoleLayout.Portrait -> {
+                val cw = min(maxW, maxH * CONSOLE_ASPECT)
+                val ch = cw / CONSOLE_ASPECT
+                shellBody(Modifier.size(cw, ch), cw) {
+                    Column(Modifier.fillMaxSize().padding(horizontal = cw * 0.062f)) {
+                        faceBlock(cw, ch)
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                // Silk-screen decals + badge print on the body, behind every control.
+                                .liveryBehind(liveryHolder[0], liveryAlpha, LiveryInk(labelColor, button, buttonDark))
+                        ) { controlsArea(cw, ch) }
                     }
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = cw * 0.16f, y = -ch * 0.030f),
-                        horizontalArrangement = Arrangement.spacedBy(cw * 0.05f),
-                    ) {
-                        PillButton(
-                            "POWER",
-                            width = cw * 0.115f,
-                            onPress = input.onPower,
-                            onHeldChange = input.onPowerHeldChange,
-                            onPressFeedback = { input.onButtonPress(ConsoleButton.Power) },
-                            labelColor = labelColor,
-                        )
-                        PillButton(
-                            "START",
-                            width = cw * 0.115f,
-                            onPress = input.onStart,
-                            onHeldChange = input.onStartHeldChange,
-                            onPressFeedback = { input.onButtonPress(ConsoleButton.Start) },
-                            labelColor = labelColor,
-                            modifier = Modifier.captionAboveCenter(captionControls?.start, cw, labelColor, captionAlpha),
-                        )
-                    }
-                    SpeakerGrill(
-                        width = cw * 0.21f,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .offset(x = -cw * 0.02f, y = -ch * 0.028f),
-                    )
-                    Screw(
-                        size = cw * 0.028f,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .offset(x = cw * 0.005f, y = -ch * 0.012f),
-                    )
                 }
             }
 
-            // A short pixel scan makes a paint selection feel like the shell
-            // is being re-sprayed instead of merely cross-fading.
-            if (respray.value < 1f) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val progress = respray.value
-                    val bandY = size.height * progress
-                    val cell = size.width * 0.022f
-                    val row = (bandY / cell).toInt()
-                    for (column in 0..46) {
-                        val phase = ((column * 7 + row * 3) % 9) / 9f
-                        val y = bandY - phase * cell * 5f
-                        if (y in 0f..size.height) {
-                            drawRect(
-                                color = labelColor.copy(alpha = (1f - progress) * 0.32f),
-                                topLeft = Offset(column * cell, y),
-                                size = Size(cell * 0.72f, cell * 0.72f),
-                            )
+            // GBA-style: D-pad left, LCD centre, A/B right.
+            // shortcut: no silk-screen decals here (ShellGeometry assumes the portrait control area), add if wanted.
+            ConsoleLayout.Wide -> {
+                val h = min(maxH, maxW / WIDE_ASPECT)
+                val w = h * WIDE_ASPECT
+                val faceW = w * 0.46f
+                val panelW = (w - faceW) / 2f
+                val cw = panelW / 0.55f
+                val ch = cw / CONSOLE_ASPECT
+                shellBody(Modifier.size(w, h), h * 0.5f) {
+                    Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.width(panelW).fillMaxHeight().padding(start = panelW * 0.04f),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Column(
+                                Modifier.width(cw * 0.30f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(cw * 0.10f),
+                            ) {
+                                dpadKey(cw, Modifier)
+                                powerPill(cw)
+                            }
+                        }
+                        Column(Modifier.width(faceW).padding(horizontal = faceW * 0.062f)) {
+                            faceBlock(faceW, faceW / CONSOLE_ASPECT)
+                        }
+                        Column(
+                            Modifier.width(panelW).fillMaxHeight(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceEvenly,
+                        ) {
+                            abKeys(cw, ch, Modifier.size(cw * 0.33f, cw * 0.155f + ch * 0.052f))
+                            startPill(cw)
+                            SpeakerGrill(width = cw * 0.21f)
                         }
                     }
-                    drawRect(
-                        color = labelColor.copy(alpha = 0.28f * (1f - progress)),
-                        topLeft = Offset(0f, bandY.coerceIn(0f, size.height)),
-                        size = Size(size.width, cell * 0.22f),
-                    )
+                }
+            }
+
+            // Flip-style tabletop: LCD above the hinge, controls below, like a GBA SP.
+            ConsoleLayout.Clamshell -> {
+                val gap = maxH * HINGE_GAP
+                val halfH = (maxH - gap) / 2f
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxWidth().height(halfH), contentAlignment = Alignment.BottomCenter) {
+                        faceBody(min(maxW, halfH / FACE_H))
+                    }
+                    Spacer(Modifier.height(gap))
+                    Box(Modifier.fillMaxWidth().height(halfH), contentAlignment = Alignment.TopCenter) {
+                        controlsBody(min(maxW, halfH / CONTROLS_H))
+                    }
+                }
+            }
+
+            // Fold held like a book: LCD on the left panel, controls on the right, nothing under the crease.
+            ConsoleLayout.BookSplit -> {
+                val gap = maxW * HINGE_GAP
+                val halfW = (maxW - gap) / 2f
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.width(halfW).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                        faceBody(min(halfW, maxH / FACE_H))
+                    }
+                    Spacer(Modifier.width(gap))
+                    Box(Modifier.width(halfW).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                        controlsBody(min(halfW, maxH / CONTROLS_H))
+                    }
                 }
             }
         }
+    }
+}
+
+/** Molded body: gradient, drop shadow, inset line and edge shading. [cw] sizes the corner radius. */
+@Composable
+private fun ShellBody(
+    modifier: Modifier,
+    cw: Dp,
+    bodyLight: Color,
+    body: Color,
+    bodyDark: Color,
+    edge: Color,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val corner = cw * 0.09f
+    val shape = RoundedCornerShape(corner)
+    Box(
+        modifier
+            .shadow(elevation = 22.dp, shape = shape, spotColor = Color.Black, ambientColor = Color.Black)
+            .clip(shape)
+            .background(Brush.verticalGradient(listOf(bodyLight, body, bodyDark)))
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            val base = kotlin.math.min(size.width, size.height)
+            val inset = base * 0.028f
+            drawRoundRect(
+                color = edge.copy(alpha = 0.55f),
+                topLeft = Offset(inset, inset),
+                size = Size(size.width - inset * 2, size.height - inset * 2),
+                cornerRadius = CornerRadius(corner.toPx() * 0.75f),
+                style = Stroke(width = base * 0.004f),
+            )
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.5f),
+                topLeft = Offset(inset * 1.25f, inset * 1.25f),
+                size = Size(size.width - inset * 2.5f, size.height - inset * 2.5f),
+                cornerRadius = CornerRadius(corner.toPx() * 0.72f),
+                style = Stroke(width = base * 0.002f),
+            )
+        }
+        content()
+    }
+}
+
+@Composable
+private fun RespraySweep(modifier: Modifier, progress: Float, labelColor: Color) {
+    Canvas(modifier) {
+        val bandY = size.height * progress
+        val cell = size.width * 0.022f
+        val row = (bandY / cell).toInt()
+        for (column in 0..46) {
+            val phase = ((column * 7 + row * 3) % 9) / 9f
+            val y = bandY - phase * cell * 5f
+            if (y in 0f..size.height) {
+                drawRect(
+                    color = labelColor.copy(alpha = (1f - progress) * 0.32f),
+                    topLeft = Offset(column * cell, y),
+                    size = Size(cell * 0.72f, cell * 0.72f),
+                )
+            }
+        }
+        drawRect(
+            color = labelColor.copy(alpha = 0.28f * (1f - progress)),
+            topLeft = Offset(0f, bandY.coerceIn(0f, size.height)),
+            size = Size(size.width, cell * 0.22f),
+        )
     }
 }
 

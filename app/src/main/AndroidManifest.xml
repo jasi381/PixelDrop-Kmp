@@ -17,6 +17,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.PixelDrop" >
             <intent-filter>
