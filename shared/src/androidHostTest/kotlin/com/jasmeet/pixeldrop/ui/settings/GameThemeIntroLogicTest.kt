@@ -14,8 +14,8 @@ class GameThemeIntroLogicTest {
     }
 
     @Test fun `preview index wraps both ways and skips teaser slots`() {
-        assertEquals(5, nextIntroIndex(0, -1, GAME_THEME_INTRO_GAMES.size))
-        assertEquals(0, nextIntroIndex(5, 1, GAME_THEME_INTRO_GAMES.size))
-        assertEquals(6, GAME_THEME_INTRO_GAMES.size)
+        assertEquals(6, nextIntroIndex(0, -1, GAME_THEME_INTRO_GAMES.size))
+        assertEquals(0, nextIntroIndex(6, 1, GAME_THEME_INTRO_GAMES.size))
+        assertEquals(7, GAME_THEME_INTRO_GAMES.size)
     }
 }

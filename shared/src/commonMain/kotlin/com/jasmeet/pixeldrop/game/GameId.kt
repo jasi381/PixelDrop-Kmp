@@ -1,10 +1,10 @@
 package com.jasmeet.pixeldrop.game
 
-/** Every slot in the CANVAS CLASSICS menu. The first six launch a real game;
+/** Every slot in the CANVAS CLASSICS menu. The first seven launch a real game;
  *  the rest are teasers that open the COMING SOON screen (see [isPlayable]). */
 enum class GameId {
-    PixelDrop, PixelTrail, BrickPulse, OrbitBlaster, MeteorDodge, PixelRacer,
-    Soon1, Soon2, Soon3, Soon4,
+    PixelDrop, PixelTrail, BrickPulse, OrbitBlaster, MeteorDodge, PixelRacer, BombGrid,
+    Soon2, Soon3, Soon4,
 }
 
 data class GameInfo(val id: GameId, val title: String, val comingSoon: Boolean = false)
@@ -17,7 +17,7 @@ val GAMES: List<GameInfo> = listOf(
     GameInfo(GameId.OrbitBlaster, "ORBIT BLASTER"),
     GameInfo(GameId.MeteorDodge, "METEOR DODGE"),
     GameInfo(GameId.PixelRacer, "PIXEL RACER"),
-    GameInfo(GameId.Soon1, "BOMB GRID", comingSoon = true),
+    GameInfo(GameId.BombGrid, "BOMB GRID"),
     GameInfo(GameId.Soon2, "RIDGE RUNNER", comingSoon = true),
     GameInfo(GameId.Soon3, "TOWER STACK", comingSoon = true),
     GameInfo(GameId.Soon4, "RALLY DUEL", comingSoon = true),

@@ -1,5 +1,7 @@
 package com.jasmeet.pixeldrop.ui.haptics
 
+import com.jasmeet.pixeldrop.bombgrid.BombGridPhase
+import com.jasmeet.pixeldrop.bombgrid.BombGridState
 import com.jasmeet.pixeldrop.brickpulse.BrickPulsePhase
 import com.jasmeet.pixeldrop.brickpulse.BrickPulseState
 import com.jasmeet.pixeldrop.game.GamePhase
@@ -117,6 +119,24 @@ object GameHaptics {
             if (cur.powerupsCollected > prev.powerupsCollected) HapticEvent.Success else null,
             if (cur.nearMisses > prev.nearMisses || cur.lowFuelWarnings > prev.lowFuelWarnings) HapticEvent.Warning else null,
             if (cur.coinsCollected > prev.coinsCollected || cur.fuelCollected > prev.fuelCollected) HapticEvent.Light else null,
+        )
+    }
+
+    /**
+     * BOMB GRID: bomb placed light, blast medium scaled by chain (capped at 3
+     * pulses), enemy destroyed / grid cleared success, hit impact (shield medium).
+     */
+    fun bombGrid(prev: BombGridState, cur: BombGridState): HapticEvent? {
+        if (prev.phase != BombGridPhase.Running || cur.phase != BombGridPhase.Running) return null
+        val hit = cur.lives < prev.lives
+        val shieldBlocked = cur.shieldHits < prev.shieldHits && cur.grid == prev.grid
+        val chainSteps = if (cur.currentChain > prev.currentChain) cur.currentChain - prev.currentChain else 0
+        return strongestHaptic(
+            if (hit) HapticEvent.Impact else null,
+            if (shieldBlocked) HapticEvent.Medium else null,
+            if (cur.enemiesDestroyed > prev.enemiesDestroyed || cur.grid > prev.grid) HapticEvent.Success else null,
+            if (chainSteps > 0) chainHaptic(chainSteps) else null,
+            if (cur.bombsPlaced > prev.bombsPlaced) HapticEvent.Light else null,
         )
     }
 

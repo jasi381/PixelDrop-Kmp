@@ -154,8 +154,13 @@ private fun buildLivery(id: GameId): Livery = when (id) {
         rect(54, 2, 1, 7, LiveryTone.Soft)
         for (r in 0..3) for (c in 0..7) if ((r + c) % 2 == 0) dot(55 + c, 3 + r, LiveryTone.AccentDark)
     }
+    // Hazard stripes along the lower edge.
+    GameId.BombGrid -> livery(id) {
+        rect(0, 5, LIVERY_COLS, 1, LiveryTone.Faint)
+        for (row in 6..9) for (k in 0..7) rect(k * 8 + (row - 6), row, 4, 1, LiveryTone.AccentDark)
+    }
     // Teaser slots never play, so they carry no decals.
-    GameId.Soon1, GameId.Soon2, GameId.Soon3, GameId.Soon4 -> livery(id) {}
+    GameId.Soon2, GameId.Soon3, GameId.Soon4 -> livery(id) {}
 }
 
 private val LIVERIES: List<Livery> = GameId.entries.map(::buildLivery)

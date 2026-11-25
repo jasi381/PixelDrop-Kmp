@@ -107,8 +107,10 @@ fun gameControls(id: GameId): GameControls = when (id) {
     GameId.MeteorDodge -> GameControls(up = "MOVE", down = "MOVE", left = "MOVE", right = "MOVE", a = "DASH")
     // Steering is the whole game: LEFT/RIGHT only, A stays free.
     GameId.PixelRacer -> GameControls(left = "STEER", right = "STEER")
+    // Four-way movement, A drops a bomb.
+    GameId.BombGrid -> GameControls(up = "MOVE", down = "MOVE", left = "MOVE", right = "MOVE", a = "BOMB")
     // Teaser slots never play.
-    GameId.Soon1, GameId.Soon2, GameId.Soon3, GameId.Soon4 -> GameControls()
+    GameId.Soon2, GameId.Soon3, GameId.Soon4 -> GameControls()
 }
 
 /** All control maps, indexed by [GameId.ordinal], so draw code never rebuilds them. */

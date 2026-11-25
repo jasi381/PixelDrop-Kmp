@@ -63,8 +63,9 @@ internal fun renderDemo(game: GameId, t: Float, out: DemoSink) = when (game) {
     GameId.OrbitBlaster -> demoOrbitBlaster(t, out)
     GameId.MeteorDodge -> demoMeteorDodge(t, out)
     GameId.PixelRacer -> demoPixelRacer(t, out)
+    GameId.BombGrid -> demoBombGrid(t, out)
     // Teaser slots draw a text sprite instead (see drawComingSoonSprite).
-    GameId.Soon1, GameId.Soon2, GameId.Soon3, GameId.Soon4 -> Unit
+    GameId.Soon2, GameId.Soon3, GameId.Soon4 -> Unit
 }
 
 // ---- small helpers -------------------------------------------------------
@@ -328,4 +329,135 @@ private fun demoPixelRacer(t: Float, out: DemoSink) {
         else -> RACER_LANE_X[1]
     }
     out.racerCar(px, 12.5f)
+}
+
+// ---- BOMB GRID: walk, drop, fuse quickens, cross blast, chain, score ------
+
+/** Border plus every even/even pillar, packed row * DEMO_COLS + col. */
+private val BOMB_WALLS: IntArray = run {
+    var n = 0
+    for (r in 0 until DEMO_ROWS) for (c in 0 until DEMO_COLS) if (isBombWall(r, c)) n++
+    val a = IntArray(n)
+    var i = 0
+    for (r in 0 until DEMO_ROWS) for (c in 0 until DEMO_COLS) if (isBombWall(r, c)) a[i++] = r * DEMO_COLS + c
+    a
+}
+
+private fun isBombWall(r: Int, c: Int) =
+    r == 0 || r == DEMO_ROWS - 1 || c == 0 || c == DEMO_COLS - 1 || (r % 2 == 0 && c % 2 == 0)
+
+/** Crates that never break in the demo: row, col pairs. */
+private val BOMB_STATIC_CRATES = intArrayOf(9, 7, 11, 5, 3, 7, 13, 7, 12, 1)
+
+/** Blast cells as row, col, kind (0 centre, 1 horizontal arm, 2 vertical arm). */
+private val BOMB_BLAST_1 = intArrayOf(
+    7, 3, 0, 7, 2, 1, 7, 1, 1, 7, 4, 1, 7, 5, 1, 6, 3, 2, 5, 3, 2, 8, 3, 2, 9, 3, 2,
+)
+private val BOMB_BLAST_2 = intArrayOf(
+    5, 3, 0, 5, 2, 1, 5, 1, 1, 5, 4, 1, 5, 5, 1, 4, 3, 2, 3, 3, 2, 6, 3, 2, 7, 3, 2,
+)
+
+private const val BOMB_DROP_T = 0.18f
+private const val BOMB_BLAST_1_T = 0.60f
+private const val BOMB_BLAST_2_T = 0.64f
+private const val BOMB_BLAST_LEN = 0.10f
+private const val BOMB_RESET_T = 0.88f
+
+private fun DemoSink.bombCrate(r: Int, c: Int) {
+    cell(r, c)
+    box(c + 0.15f, r + 0.45f, 0.7f, 0.1f, TONE_PAPER)
+    box(c + 0.45f, r + 0.15f, 0.1f, 0.7f, TONE_PAPER)
+}
+
+/** Fuse blink: a chirp, so the pulse rate climbs as the fuse burns down. */
+private fun DemoSink.bombFuse(r: Int, c: Int, age: Float) {
+    val big = ((age * (4f + 14f * age)).toInt() and 1) == 0
+    if (big) {
+        box(c + 0.15f, r + 0.25f, 0.7f, 0.7f, TONE_FULL)
+        box(c + 0.6f, r + 0.02f, 0.25f, 0.25f, TONE_FULL)
+    } else {
+        box(c + 0.25f, r + 0.35f, 0.5f, 0.5f, TONE_FULL)
+    }
+}
+
+private fun DemoSink.bombBlast(cells: IntArray, tone: Int) {
+    var i = 0
+    while (i < cells.size) {
+        val r = cells[i]; val c = cells[i + 1]
+        when (cells[i + 2]) {
+            0 -> { box(c.toFloat(), r.toFloat(), 1f, 1f, TONE_FULL); box(c + 0.35f, r + 0.35f, 0.3f, 0.3f, TONE_PAPER) }
+            1 -> box(c.toFloat(), r + 0.3f, 1f, 0.4f, tone)
+            else -> box(c + 0.3f, r.toFloat(), 0.4f, 1f, tone)
+        }
+        i += 3
+    }
+}
+
+private fun DemoSink.bombAsh(cells: IntArray) {
+    var i = 0
+    while (i < cells.size) { cell(cells[i], cells[i + 1], TONE_FAINT); i += 3 }
+}
+
+private fun demoBombGrid(t: Float, out: DemoSink) {
+    for (p in BOMB_WALLS) out.cell(p / DEMO_COLS, p % DEMO_COLS, TONE_MID)
+    // Score meter along the top wall ticks up as things break.
+    val meter = when {
+        t < BOMB_BLAST_1_T -> 0
+        t < BOMB_BLAST_2_T -> 3
+        t < 0.68f -> 5
+        t < BOMB_RESET_T -> 7
+        else -> 0
+    }
+    for (c in 1..meter) out.cell(0, c)
+
+    // After the reset instant the level "rebuilds" with a short flicker.
+    val rebuilt = t >= BOMB_RESET_T
+    val show = !rebuilt || t >= 0.94f || blinkOn(t, 50f)
+
+    var i = 0
+    while (i < BOMB_STATIC_CRATES.size) { out.bombCrate(BOMB_STATIC_CRATES[i], BOMB_STATIC_CRATES[i + 1]); i += 2 }
+    if (t < BOMB_BLAST_1_T || (rebuilt && show)) out.bombCrate(7, 5)
+    if (t < BOMB_BLAST_2_T || (rebuilt && show)) { out.bombCrate(5, 5); out.bombCrate(3, 3) }
+
+    // The pre-placed bomb the chain reaction will catch, and the one the player drops.
+    if (t < BOMB_BLAST_2_T) out.bombFuse(5, 3, seg(t, 0f, BOMB_BLAST_2_T))
+    else if (rebuilt && show) out.bombFuse(5, 3, 0f)
+    if (t >= BOMB_DROP_T && t < BOMB_BLAST_1_T) out.bombFuse(7, 3, seg(t, BOMB_DROP_T, BOMB_BLAST_1_T))
+
+    // Hunter climbs the column toward the bomb and is caught by the blast.
+    if (t < BOMB_BLAST_1_T) {
+        val row = 14 - (t / 0.12f).toInt().coerceAtMost(5)
+        out.cell(row, 3); out.hunterEyes(row, 3)
+    } else if (rebuilt && show) {
+        out.cell(14, 3); out.hunterEyes(14, 3)
+    }
+
+    // Blasts, then ash.
+    if (t >= BOMB_BLAST_1_T && t < BOMB_BLAST_1_T + BOMB_BLAST_LEN) out.bombBlast(BOMB_BLAST_1, TONE_FULL)
+    if (t >= BOMB_BLAST_2_T && t < BOMB_BLAST_2_T + BOMB_BLAST_LEN) out.bombBlast(BOMB_BLAST_2, TONE_FULL)
+    if (t >= BOMB_BLAST_1_T + BOMB_BLAST_LEN && t < BOMB_RESET_T) {
+        if (t >= BOMB_BLAST_2_T + BOMB_BLAST_LEN) { out.bombAsh(BOMB_BLAST_1); out.bombAsh(BOMB_BLAST_2) }
+    }
+
+    // Player: walks in, drops the bomb, retreats round the corner, walks back.
+    val pr: Int
+    val pc: Int
+    when {
+        t < 0.10f -> { pr = 7; pc = 1 }
+        t < 0.16f -> { pr = 7; pc = 2 }
+        t < 0.22f -> { pr = 7; pc = 3 }
+        t < 0.27f -> { pr = 7; pc = 2 }
+        t < 0.32f -> { pr = 7; pc = 1 }
+        t < 0.37f -> { pr = 8; pc = 1 }
+        t < 0.90f -> { pr = 9; pc = 1 }
+        t < 0.94f -> { pr = 8; pc = 1 }
+        else -> { pr = 7; pc = 1 }
+    }
+    out.cell(pr, pc)
+    out.box(pc + 0.55f, pr + 0.3f, 0.2f, 0.2f, TONE_PAPER)
+}
+
+private fun DemoSink.hunterEyes(r: Int, c: Int) {
+    box(c + 0.2f, r + 0.3f, 0.2f, 0.2f, TONE_PAPER)
+    box(c + 0.6f, r + 0.3f, 0.2f, 0.2f, TONE_PAPER)
 }
