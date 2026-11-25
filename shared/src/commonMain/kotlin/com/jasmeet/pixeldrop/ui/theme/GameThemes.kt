@@ -78,8 +78,19 @@ fun gameConsoleTheme(id: GameId): ConsoleTheme = when (id) {
         button = Color(0xFF3F444B),
         buttonDark = Color(0xFF20232A),
     )
+    // Safety-yellow shell, hazard-black keys.
+    GameId.BombGrid -> ConsoleTheme(
+        id = "game_bombgrid", label = "BOMB GRID",
+        bodyLight = Color(0xFFFFDA33),
+        body = Color(0xFFF2C500),
+        bodyDark = Color(0xFFC49B00),
+        edge = Color(0xFF7A5F00),
+        buttonLight = Color(0xFF4A4A4A),
+        button = Color(0xFF2A2A2A),
+        buttonDark = Color(0xFF111111),
+    )
     // Teaser slots never play; they wear the factory paint if ever asked.
-    GameId.Soon1, GameId.Soon2, GameId.Soon3, GameId.Soon4 -> gameConsoleTheme(GameId.PixelDrop)
+    GameId.Soon2, GameId.Soon3, GameId.Soon4 -> gameConsoleTheme(GameId.PixelDrop)
 }
 
 /** Game paints in menu order. */

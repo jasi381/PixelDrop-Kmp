@@ -38,6 +38,8 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.jasmeet.pixeldrop.bombgrid.BombGridEngine
+import com.jasmeet.pixeldrop.bombgrid.BombGridPhase
 import com.jasmeet.pixeldrop.brickpulse.BrickPulseEngine
 import com.jasmeet.pixeldrop.brickpulse.BrickPulsePhase
 import com.jasmeet.pixeldrop.game.GameEngine
@@ -92,6 +94,8 @@ import com.jasmeet.pixeldrop.ui.components.PrivacyPolicyButton
 import com.jasmeet.pixeldrop.ui.components.PrivacyPolicyScreen
 import com.jasmeet.pixeldrop.ui.components.RetroConsoleShell
 import com.jasmeet.pixeldrop.ui.screens.BootScreen
+import com.jasmeet.pixeldrop.ui.screens.BombGridGameOverScreen
+import com.jasmeet.pixeldrop.ui.screens.BombGridScreen
 import com.jasmeet.pixeldrop.ui.screens.BrickPulseGameOverScreen
 import com.jasmeet.pixeldrop.ui.screens.BrickPulseScreen
 import com.jasmeet.pixeldrop.ui.screens.ComingSoonScreen
@@ -138,6 +142,7 @@ private fun isActiveGameRunning(
     orbitEngine: OrbitBlasterEngine,
     meteorEngine: MeteorDodgeEngine,
     racerEngine: PixelRacerEngine,
+    bombEngine: BombGridEngine,
 ): Boolean {
     if (screen != AppScreen.Game) return false
     return when (selectedGameId) {
@@ -147,6 +152,7 @@ private fun isActiveGameRunning(
         GameId.OrbitBlaster -> orbitEngine.state.phase == OrbitBlasterPhase.Running
         GameId.MeteorDodge -> meteorEngine.state.phase == MeteorDodgePhase.Running
         GameId.PixelRacer -> racerEngine.state.phase == PixelRacerPhase.Running
+        GameId.BombGrid -> bombEngine.state.phase == BombGridPhase.Running
         else -> false
     }
 }
@@ -213,6 +219,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
     val orbitEngine = remember { OrbitBlasterEngine() }
     val meteorEngine = remember { MeteorDodgeEngine() }
     val racerEngine = remember { PixelRacerEngine() }
+    val bombEngine = remember { BombGridEngine() }
     var screen by remember { mutableStateOf(AppScreen.Boot) }
 
     // Cursor in the CANVAS CLASSICS menu; also which game ComingSoon names.
@@ -232,6 +239,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
     var frozenOrbitPhase by remember { mutableStateOf(OrbitBlasterPhase.Running) }
     var frozenMeteorPhase by remember { mutableStateOf(MeteorDodgePhase.Running) }
     var frozenRacerPhase by remember { mutableStateOf(PixelRacerPhase.Running) }
+    var frozenBombPhase by remember { mutableStateOf(BombGridPhase.Running) }
 
     // Raw pressed state of the POWER pill, for the hold-to-power-off timer.
     var powerHeld by remember { mutableStateOf(false) }
@@ -247,7 +255,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                 Lifecycle.Event.ON_RESUME -> {
                     haptics.setLifecycleActive(true)
                     soundPlayer.resumeSfx()
-                    if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
+                    if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine, bombEngine)) {
                         soundPlayer.startGameplayMusic()
                     }
                 }
@@ -268,7 +276,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
             soundPlayer.pauseSfx()
         } else {
             soundPlayer.resumeSfx()
-            if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
+            if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine, bombEngine)) {
                 soundPlayer.startGameplayMusic()
             }
         }
@@ -388,6 +396,21 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
         }
     }
 
+    // BOMB GRID's tick — frame-driven; fuses, blasts and hunters all run off the delta.
+    val bombPhase = bombEngine.state.phase
+    LaunchedEffect(screen, selectedGameId, bombPhase) {
+        if (screen == AppScreen.Game && selectedGameId == GameId.BombGrid && bombPhase == BombGridPhase.Running) {
+            var lastFrame = withFrameMillis { it }
+            while (true) {
+                withFrameMillis { now ->
+                    val delta = now - lastFrame
+                    lastFrame = now
+                    bombEngine.tick(delta)
+                }
+            }
+        }
+    }
+
     // Line-clear chime: fires whenever the cleared-lines counter grows.
     val clearedLines = engine.state.lines
     var previousLines by remember { mutableIntStateOf(0) }
@@ -488,6 +511,16 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
         previousRacerFuelWarnings = racerFuelWarnings
     }
 
+    // BOMB GRID hunter kills reuse the clear chime, like ORBIT BLASTER kills.
+    val bombEnemiesDestroyed = bombEngine.state.enemiesDestroyed
+    var previousBombEnemiesDestroyed by remember { mutableIntStateOf(0) }
+    LaunchedEffect(bombEnemiesDestroyed) {
+        if (bombEnemiesDestroyed > previousBombEnemiesDestroyed && screen == AppScreen.Game) {
+            soundPlayer.playLineClear()
+        }
+        previousBombEnemiesDestroyed = bombEnemiesDestroyed
+    }
+
     // Shared game-over chime: one shot on the transition into any game's
     // GameOver phase. Keyed on the boolean, so recompositions and sitting on
     // the game-over screen never replay it; retry flips it false and re-arms.
@@ -498,6 +531,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
         GameId.OrbitBlaster -> orbitPhase == OrbitBlasterPhase.GameOver
         GameId.MeteorDodge -> meteorPhase == MeteorDodgePhase.GameOver
         GameId.PixelRacer -> racerPhase == PixelRacerPhase.GameOver
+        GameId.BombGrid -> bombPhase == BombGridPhase.GameOver
         else -> false
     }
     LaunchedEffect(anyGameOver) {
@@ -514,10 +548,11 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
     HapticDiffEffect(haptics, { orbitEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.OrbitBlaster }, GameHaptics::orbitBlaster)
     HapticDiffEffect(haptics, { meteorEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.MeteorDodge }, GameHaptics::meteorDodge)
     HapticDiffEffect(haptics, { racerEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.PixelRacer }, GameHaptics::pixelRacer)
+    HapticDiffEffect(haptics, { bombEngine.state }, { screen == AppScreen.Game && selectedGameId == GameId.BombGrid }, GameHaptics::bombGrid)
 
     // Gameplay music follows whichever game is active: playing while a round
     // runs, paused with the pause menu, stopped (and rewound) everywhere else.
-    LaunchedEffect(screen, selectedGameId, phase, trailPhase, brickPhase, orbitPhase, meteorPhase, racerPhase) {
+    LaunchedEffect(screen, selectedGameId, phase, trailPhase, brickPhase, orbitPhase, meteorPhase, racerPhase, bombPhase) {
         when {
             screen != AppScreen.Game -> soundPlayer.stopGameplayMusic()
             selectedGameId == GameId.PixelDrop && phase == GamePhase.Running ->
@@ -544,6 +579,10 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                 soundPlayer.startGameplayMusic()
             selectedGameId == GameId.PixelRacer && racerPhase == PixelRacerPhase.Paused ->
                 soundPlayer.pauseGameplayMusic()
+            selectedGameId == GameId.BombGrid && bombPhase == BombGridPhase.Running ->
+                soundPlayer.startGameplayMusic()
+            selectedGameId == GameId.BombGrid && bombPhase == BombGridPhase.Paused ->
+                soundPlayer.pauseGameplayMusic()
             else -> soundPlayer.stopGameplayMusic()
         }
     }
@@ -563,6 +602,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
             frozenOrbitPhase = orbitEngine.state.phase
             frozenMeteorPhase = meteorEngine.state.phase
             frozenRacerPhase = racerEngine.state.phase
+            frozenBombPhase = bombEngine.state.phase
             soundPlayer.playShutdown()
             haptics.play(HapticEvent.Power)
             screen = AppScreen.PoweringOff
@@ -613,6 +653,13 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
         screen = AppScreen.Game
     }
 
+    fun startBombGrid() {
+        bombEngine.reset()
+        pauseIndex = 0
+        soundPlayer.stopGameplayMusic()
+        screen = AppScreen.Game
+    }
+
     // Playable classics launch directly; the teaser slots open COMING SOON.
     fun launchSelected() {
         when (selectedGameId) {
@@ -622,6 +669,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
             GameId.OrbitBlaster -> startOrbitBlaster()
             GameId.MeteorDodge -> startMeteorDodge()
             GameId.PixelRacer -> startPixelRacer()
+            GameId.BombGrid -> startBombGrid()
             else -> screen = AppScreen.ComingSoon
         }
     }
@@ -746,6 +794,9 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                             racerEngine.moveLeft()
                             soundPlayer.playMove()
                         }
+                        GameId.BombGrid -> if (bombEngine.state.phase == BombGridPhase.Running) {
+                            bombEngine.move(-1, 0)
+                        }
                         else -> Unit
                     }
                 }
@@ -773,6 +824,9 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                         GameId.PixelRacer -> if (racerEngine.state.phase == PixelRacerPhase.Running) {
                             racerEngine.moveRight()
                             soundPlayer.playMove()
+                        }
+                        GameId.BombGrid -> if (bombEngine.state.phase == BombGridPhase.Running) {
+                            bombEngine.move(1, 0)
                         }
                         else -> Unit
                     }
@@ -809,6 +863,11 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                     screen == AppScreen.Game && selectedGameId == GameId.PixelRacer &&
                         racerEngine.state.phase == PixelRacerPhase.Paused ->
                         pauseIndex = (pauseIndex + 1) % PAUSE_MENU_ITEMS.size
+                    screen == AppScreen.Game && selectedGameId == GameId.BombGrid -> when (bombEngine.state.phase) {
+                        BombGridPhase.Running -> bombEngine.move(0, 1)
+                        BombGridPhase.Paused -> pauseIndex = (pauseIndex + 1) % PAUSE_MENU_ITEMS.size
+                        else -> Unit
+                    }
                 }
             },
             onUp = onUp@{
@@ -844,6 +903,12 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                     screen == AppScreen.Game && selectedGameId == GameId.PixelRacer &&
                         racerEngine.state.phase == PixelRacerPhase.Paused ->
                         pauseIndex = (pauseIndex + PAUSE_MENU_ITEMS.size - 1) % PAUSE_MENU_ITEMS.size
+                    screen == AppScreen.Game && selectedGameId == GameId.BombGrid -> when (bombEngine.state.phase) {
+                        BombGridPhase.Running -> bombEngine.move(0, -1)
+                        BombGridPhase.Paused ->
+                            pauseIndex = (pauseIndex + PAUSE_MENU_ITEMS.size - 1) % PAUSE_MENU_ITEMS.size
+                        else -> Unit
+                    }
                 }
             },
             onA = a@{
@@ -911,6 +976,17 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                             }
                             PixelRacerPhase.GameOver -> startPixelRacer()
                         }
+                        GameId.BombGrid -> when (bombEngine.state.phase) {
+                            // No dedicated bomb-place clip in the shared set yet; the
+                            // rotate blip stands in. Only accepted drops make a sound.
+                            BombGridPhase.Running -> if (bombEngine.placeBomb()) soundPlayer.playRotate()
+                            BombGridPhase.Paused -> when (pauseIndex) {
+                                0 -> bombEngine.resume()
+                                1 -> startBombGrid()
+                                else -> screen = AppScreen.Menu
+                            }
+                            BombGridPhase.GameOver -> startBombGrid()
+                        }
                         else -> Unit
                     }
                 }
@@ -946,6 +1022,9 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                             screen = AppScreen.Menu
                         }
                         GameId.PixelRacer -> if (racerEngine.state.phase == PixelRacerPhase.GameOver) {
+                            screen = AppScreen.Menu
+                        }
+                        GameId.BombGrid -> if (bombEngine.state.phase == BombGridPhase.GameOver) {
                             screen = AppScreen.Menu
                         }
                         else -> Unit
@@ -1011,6 +1090,14 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                             PixelRacerPhase.Paused -> racerEngine.resume()
                             PixelRacerPhase.GameOver -> startPixelRacer()
                         }
+                        GameId.BombGrid -> when (bombEngine.state.phase) {
+                            BombGridPhase.Running -> {
+                                pauseIndex = 0
+                                bombEngine.pause()
+                            }
+                            BombGridPhase.Paused -> bombEngine.resume()
+                            BombGridPhase.GameOver -> startBombGrid()
+                        }
                         else -> Unit
                     }
                     AppScreen.PoweringOff, AppScreen.ComingSoon -> Unit
@@ -1029,7 +1116,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                     AppScreen.PoweredOff -> ShellMode.Off
                     AppScreen.Menu -> ShellMode.Menu
                     AppScreen.Game ->
-                        if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)) {
+                        if (isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine, bombEngine)) {
                             ShellMode.GameRunning
                         } else {
                             ShellMode.GameIdle
@@ -1076,7 +1163,7 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
     var captionSession by remember { mutableStateOf<GameId?>(null) }
     var captionRemainingMs by remember { mutableLongStateOf(CONTROL_CAPTION_MS) }
     val captionGame = if (screen == AppScreen.Game) selectedGameId else null
-    val captionRoundRunning = isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine)
+    val captionRoundRunning = isActiveGameRunning(screen, selectedGameId, engine, trailEngine, brickEngine, orbitEngine, meteorEngine, racerEngine, bombEngine)
     LaunchedEffect(captionGame, gameThemeEnabled) {
         captionSession = if (shouldTeachCaptions(gameThemeEnabled, captionGame, captionGame != null && captionGame in captionsSeen)) captionGame else null
         captionRemainingMs = CONTROL_CAPTION_MS
@@ -1176,6 +1263,11 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                         PixelRacerPhase.Paused -> PauseScreen(pauseIndex)
                         PixelRacerPhase.GameOver -> PixelRacerGameOverScreen(racerEngine.state)
                     }
+                    GameId.BombGrid -> when (bombEngine.state.phase) {
+                        BombGridPhase.Running -> BombGridScreen(bombEngine.state)
+                        BombGridPhase.Paused -> PauseScreen(pauseIndex)
+                        BombGridPhase.GameOver -> BombGridGameOverScreen(bombEngine.state)
+                    }
                     else -> Unit
                 }
                 AppScreen.PoweringOff -> {
@@ -1215,6 +1307,11 @@ fun PixelDropApp(windowFocused: Boolean = true, posture: FoldPosture = FoldPostu
                                     PixelRacerPhase.Running -> PixelRacerScreen(racerEngine.state)
                                     PixelRacerPhase.Paused -> PauseScreen(pauseIndex)
                                     PixelRacerPhase.GameOver -> PixelRacerGameOverScreen(racerEngine.state)
+                                }
+                                GameId.BombGrid -> when (frozenBombPhase) {
+                                    BombGridPhase.Running -> BombGridScreen(bombEngine.state)
+                                    BombGridPhase.Paused -> PauseScreen(pauseIndex)
+                                    BombGridPhase.GameOver -> BombGridGameOverScreen(bombEngine.state)
                                 }
                                 else -> Unit
                             }

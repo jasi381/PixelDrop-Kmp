@@ -4,7 +4,7 @@
         C A N V A S   C L A S S I C S
 ```
 
-> A pocket-sized retro handheld, drawn entirely on a canvas. One console, six arcade classics, Android + iOS.
+> A pocket-sized retro handheld, drawn entirely on a canvas. One console, seven arcade classics, Android + iOS.
 
 ## ▶ GAMES
 
@@ -16,7 +16,8 @@
 | 4 | **ORBIT BLASTER** | slide, shoot, survive |
 | 5 | **METEOR DODGE** | sidestep the sky |
 | 6 | **PIXEL RACER** | weave through traffic |
-| 7-10 | ??? | `COMING SOON` |
+| 7 | **BOMB GRID** | chain blasts, outrun the hunters |
+| 8-10 | ??? | `COMING SOON` |
 
 ## ⚙ CONSOLE
 

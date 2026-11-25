@@ -79,11 +79,21 @@ class MenuDemoFramesTest {
 
     @Test fun `sub-loop start and end frames are close for the stateful demos`() {
         // The demos that rebuild their scene must land back on (nearly) the opening frame.
-        val stateful = listOf(GameId.PixelDrop, GameId.BrickPulse, GameId.OrbitBlaster)
+        val stateful = listOf(GameId.PixelDrop, GameId.BrickPulse, GameId.OrbitBlaster, GameId.BombGrid)
         for (game in stateful) {
             val end = frame(game, 0.999f)
             val start = frame(game, 0f)
             assertTrue("$game seam too visible: ${diff(end, start)}", diff(end, start) <= 24)
         }
+    }
+
+    @Test fun `bomb grid demo shows the blast and the score meter mid loop`() {
+        val before = frame(GameId.BombGrid, 0.55f)
+        val blast = frame(GameId.BombGrid, 0.62f)
+        assertTrue(diff(before, blast) > 10)
+        // Meter cells light along the top wall once things break.
+        val meterBefore = before.count { it.split(",")[1].toFloat() < 1f && it.endsWith(",0") }
+        val meterAfter = frame(GameId.BombGrid, 0.75f).count { it.split(",")[1].toFloat() < 1f && it.endsWith(",0") }
+        assertTrue(meterAfter > meterBefore)
     }
 }
